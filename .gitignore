@@ -1,0 +1,26 @@
+# Node
+frontend/node_modules
+frontend/dist
+
+# Python
+backend/.venv
+backend/__pycache__
+backend/app/__pycache__
+backend/.pytest_cache
+*.pyc
+
+# Data — never commit the live database
+backend/flowfunds.db
+
+# OS
+.DS_Store
+
+# Secrets — never commit these
+backend/.env
+backend/private_key.pem
+backend/public_key.pem
+
+# Frontend env (example file IS committed, actual .env is not)
+frontend/.env
+frontend/.env.local
+
