@@ -71,6 +71,18 @@ def get_vapid_config() -> dict[str, str | None]:
             except Exception:
                 private_key = None
 
+        # Also support plain base64 payloads (without "base64:" prefix),
+        # which often start with "LS0t" when users copy from base64 output.
+        if private_key and not private_key.startswith("-----"):
+            compact_candidate = "".join(private_key.split())
+            if compact_candidate and all(ch.isalnum() or ch in "+/=" for ch in compact_candidate):
+                try:
+                    decoded_candidate = base64.b64decode(compact_candidate.encode("utf-8"), validate=True).decode("utf-8")
+                    if "BEGIN PRIVATE KEY" in decoded_candidate:
+                        private_key = decoded_candidate
+                except Exception:
+                    pass
+
         if private_key and "\\n" in private_key and "BEGIN" in private_key:
             private_key = private_key.replace("\\n", "\n")
 
