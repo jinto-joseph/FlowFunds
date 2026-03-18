@@ -30,6 +30,7 @@ export const api = {
   getDailyTrend: () => apiFetch("/analytics/daily-trend"),
   getTips: () => apiFetch("/analytics/tips"),
   getForecast: () => apiFetch("/predict/forecast"),
+  getFinancialHealth: () => apiFetch("/predict/financial-health"),
   getPatterns: () => apiFetch("/analytics/patterns"),
   getTodayStats: () => apiFetch("/analytics/today"),
   getPeriodAnalysis: (period) => apiFetch(`/analytics/period?period=${period}`),

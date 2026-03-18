@@ -15,6 +15,7 @@ import TodaySnapshot from "./components/TodaySnapshot";
 import LoanTracker from "./components/LoanTracker";
 import InsightsPage from "./components/InsightsPage";
 import PaybackPromptModal from "./components/PaybackPromptModal";
+import FinancialCoach from "./components/FinancialCoach";
 
 const DEFAULT_SUMMARY = { balance: 0, total_income: 0, total_expense: 0 };
 
@@ -41,6 +42,7 @@ export default function App() {
   const [forecastData, setForecastData] = useState({ forecast: [], historical: [], trend: "stable" });
   const [patternsData, setPatternsData] = useState([]);
   const [todayStats, setTodayStats] = useState({ today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
+  const [financialHealth, setFinancialHealth] = useState({});
   const [loans, setLoans] = useState([]);
   const [outstandingLoanTotal, setOutstandingLoanTotal] = useState(0);
   const [weeklyAnalysis, setWeeklyAnalysis] = useState({ categories: [], daily: [] });
@@ -59,6 +61,10 @@ export default function App() {
 
   const lowBalance = useMemo(() => summary.balance < threshold, [summary.balance, threshold]);
   const hasUnpaidLoans = useMemo(() => loans.some((l) => !l.is_paid), [loans]);
+  const canPaybackNow = useMemo(
+    () => hasUnpaidLoans && outstandingLoanTotal > 0 && summary.balance >= outstandingLoanTotal,
+    [hasUnpaidLoans, outstandingLoanTotal, summary.balance]
+  );
   const debtMode = useMemo(() => summary.balance < 0 || hasUnpaidLoans, [summary.balance, hasUnpaidLoans]);
   const balanceHealth = useMemo(() => {
     if (threshold <= 0) return 1;
@@ -78,6 +84,7 @@ export default function App() {
         forecastResp,
         patternsResp,
         todayResp,
+        healthResp,
         loansResp,
         weeklyResp,
         monthlyResp,
@@ -91,6 +98,7 @@ export default function App() {
         api.getForecast(),
         api.getPatterns(),
         api.getTodayStats(),
+        api.getFinancialHealth(),
         api.getLoans(),
         api.getPeriodAnalysis("weekly"),
         api.getPeriodAnalysis("monthly"),
@@ -105,6 +113,7 @@ export default function App() {
       setForecastData(forecastResp ?? { forecast: [], historical: [], trend: "stable" });
       setPatternsData(patternsResp.day_of_week ?? []);
       setTodayStats(todayResp ?? { today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
+      setFinancialHealth(healthResp ?? {});
       setLoans(loansResp.loans ?? []);
       setOutstandingLoanTotal(Number(loansResp.outstanding_total ?? 0));
       setWeeklyAnalysis(weeklyResp ?? { categories: [], daily: [] });
@@ -148,6 +157,13 @@ export default function App() {
         : "Your balance is negative. You likely borrowed money. Repay as soon as possible.",
     });
   }, [debtMode, hasUnpaidLoans, notificationPermission, outstandingLoanTotal]);
+
+  useEffect(() => {
+    if (!canPaybackNow || notificationPermission !== "granted") return;
+    new Notification("FlowFunds: Ready to repay loans", {
+      body: `You now have enough balance to pay back ₹${outstandingLoanTotal.toFixed(2)}. Open payback checklist.`,
+    });
+  }, [canPaybackNow, notificationPermission, outstandingLoanTotal]);
 
   async function installApp() {
     if (!deferredInstallPrompt) return;
@@ -296,6 +312,7 @@ export default function App() {
         totalExpense={summary.total_expense}
         balance={summary.balance}
         hasUnpaidLoans={hasUnpaidLoans}
+        paybackReady={canPaybackNow}
       />
       <main className="relative z-10 mx-auto min-h-screen max-w-6xl space-y-5 px-4 py-6 text-slate-100">
         <header className="space-y-1 rounded-xl border border-slate-700/50 bg-slate-950/70 p-4 backdrop-blur-sm">
@@ -409,6 +426,26 @@ export default function App() {
               </div>
             )}
 
+            {canPaybackNow && (
+              <div className="rounded-xl border-2 border-emerald-500/60 bg-emerald-950/30 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-emerald-300">Great news: You can clear your loans now</p>
+                    <p className="text-sm text-emerald-200 mt-1">
+                      Current balance can cover your outstanding payback of ₹{outstandingLoanTotal.toFixed(2)}.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPaybackPrompt(true)}
+                    className="rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm text-emerald-100"
+                  >
+                    Open Payback Checklist
+                  </button>
+                </div>
+              </div>
+            )}
+
             <LoanTracker
               loans={loans}
               outstandingTotal={outstandingLoanTotal}
@@ -445,6 +482,8 @@ export default function App() {
               <BudgetPanel summary={summary} />
               <TodaySnapshot stats={todayStats} />
             </section>
+
+            <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
 
             <section className="grid gap-4 lg:grid-cols-2">
               <SpendingTips tips={tips} />

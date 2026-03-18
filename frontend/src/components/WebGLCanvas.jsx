@@ -14,6 +14,7 @@ export default function WebGLCanvas({
   totalExpense = 0,
   balance = 0,
   hasUnpaidLoans = false,
+  paybackReady = false,
 }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
@@ -83,6 +84,7 @@ export default function WebGLCanvas({
       expense: makeSymbolTexture("−", "#f43f5e", "rgba(244,63,94,0.34)"),
       cash: makeSymbolTexture("₹", "#38bdf8", "rgba(56,189,248,0.34)"),
       debt: makeSymbolTexture("!", "#f59e0b", "rgba(245,158,11,0.38)"),
+      payoff: makeSymbolTexture("✓", "#10b981", "rgba(16,185,129,0.44)"),
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -111,18 +113,22 @@ export default function WebGLCanvas({
       const incomeRatio = income / total;
       const expenseRatio = expense / total;
       const debt = Number(stateRef.current.balance ?? 0) < 0 || Boolean(stateRef.current.hasUnpaidLoans);
+      const ready = Boolean(stateRef.current.paybackReady);
 
       // keep some fixed cash symbols, distribute rest by ratios
-      const cashRatio = 0.24;
-      const debtRatio = debt ? 0.14 : 0.03;
-      const variable = Math.max(0.1, 1 - cashRatio - debtRatio);
+      const cashRatio = ready ? 0.18 : 0.24;
+      const debtRatio = ready ? 0.02 : debt ? 0.14 : 0.03;
+      const payoffRatio = ready ? 0.24 : 0.0;
+      const variable = Math.max(0.1, 1 - cashRatio - debtRatio - payoffRatio);
 
       return {
         income: variable * incomeRatio,
         expense: variable * expenseRatio,
         cash: cashRatio,
         debt: debtRatio,
+        payoff: payoffRatio,
         debt,
+        ready,
       };
     }
 
@@ -243,6 +249,7 @@ export default function WebGLCanvas({
     stateRef.current.totalExpense = totalExpense;
     stateRef.current.balance = balance;
     stateRef.current.hasUnpaidLoans = hasUnpaidLoans;
+    stateRef.current.paybackReady = paybackReady;
 
     // ── Animation loop ───────────────────────────────────────────────────────
     let animId;
@@ -323,6 +330,7 @@ export default function WebGLCanvas({
           if (r < mix.income) t = "income";
           else if (r < mix.income + mix.expense) t = "expense";
           else if (r < mix.income + mix.expense + mix.cash) t = "cash";
+          else if (r < mix.income + mix.expense + mix.cash + mix.payoff) t = "payoff";
           else t = "debt";
           if (u.type !== t) {
             u.type = t;
@@ -344,6 +352,10 @@ export default function WebGLCanvas({
           s.position.y += Math.sin(frame * 0.03 + idx) * 0.02;
           s.position.x += Math.cos(frame * 0.024 + idx) * 0.02;
           s.material.opacity = 0.2 + Math.sin(frame * 0.05 + u.pulse) * 0.12;
+        } else if (u.type === "payoff") {
+          s.position.y += 0.04 + Math.sin(frame * 0.03 + idx) * 0.01;
+          s.position.x += Math.sin(frame * 0.02 + idx) * 0.02;
+          s.material.opacity = 0.32 + Math.sin(frame * 0.04 + u.pulse) * 0.12;
         } else {
           s.position.y += Math.sin(frame * 0.016 + idx) * 0.01;
           s.position.x += Math.cos(frame * 0.016 + idx) * 0.01;
@@ -352,8 +364,9 @@ export default function WebGLCanvas({
 
         // Debt mode highlights symbols
         const debtBoost = mix.debt ? 1.25 : 1;
+        const payoffBoost = mix.ready ? 1.15 : 1;
         const pulse = 1 + Math.sin(frame * u.pulseSpeed + u.pulse) * 0.18;
-        const scale = u.baseScale * pulse * (0.8 + h * 0.35) * debtBoost;
+        const scale = u.baseScale * pulse * (0.8 + h * 0.35) * debtBoost * payoffBoost;
         s.scale.set(scale, scale, 1);
 
         // Wrap
@@ -424,7 +437,8 @@ export default function WebGLCanvas({
     stateRef.current.totalExpense = totalExpense;
     stateRef.current.balance = balance;
     stateRef.current.hasUnpaidLoans = hasUnpaidLoans;
-  }, [totalIncome, totalExpense, balance, hasUnpaidLoans]);
+    stateRef.current.paybackReady = paybackReady;
+  }, [totalIncome, totalExpense, balance, hasUnpaidLoans, paybackReady]);
 
   return (
     <div

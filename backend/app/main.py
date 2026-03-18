@@ -376,6 +376,97 @@ def predict_forecast() -> dict:
         return {"forecast": [], "historical": [], "error": str(exc)}
 
 
+@app.get("/predict/financial-health")
+def predict_financial_health() -> dict:
+    """ML-style financial health guidance for next 7 days."""
+    with get_conn() as conn:
+        income = float(
+            conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'"
+            ).fetchone()[0]
+        )
+        expense = float(
+            conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'"
+            ).fetchone()[0]
+        )
+        outstanding_loans = float(
+            conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM loans WHERE is_paid=0"
+            ).fetchone()[0]
+        )
+        today_expense = float(
+            conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date)=date('now')"
+            ).fetchone()[0]
+        )
+        daily_rows = conn.execute(
+            """
+            SELECT date(date) as day,
+                   SUM(CASE WHEN kind='income' THEN amount ELSE 0 END) as income,
+                   SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END) as expense
+            FROM transactions
+            WHERE date(date) >= date('now', '-30 days')
+            GROUP BY date(date)
+            ORDER BY day ASC
+            """
+        ).fetchall()
+
+    balance = income - expense
+    payback_ready = outstanding_loans > 0 and balance >= outstanding_loans
+
+    daily_net = [float(row["income"] or 0) - float(row["expense"] or 0) for row in daily_rows]
+    daily_expense = [float(row["expense"] or 0) for row in daily_rows]
+
+    if daily_net:
+        avg_daily_net = sum(daily_net) / len(daily_net)
+    else:
+        avg_daily_net = 0.0
+
+    projected_balance_7d = balance + avg_daily_net * 7
+
+    if daily_expense:
+        exp_mean = sum(daily_expense) / len(daily_expense)
+        variance = sum((item - exp_mean) ** 2 for item in daily_expense) / len(daily_expense)
+        exp_std = variance ** 0.5
+    else:
+        exp_mean = 0.0
+        exp_std = 0.0
+
+    expense_spike = exp_std > 0 and today_expense > exp_mean + (2 * exp_std)
+
+    # Keep a repay-first budget: if loans exist, protect that money first.
+    spendable_after_loan = max(0.0, balance - outstanding_loans)
+    recommended_daily_budget = spendable_after_loan / 7 if spendable_after_loan > 0 else max(0.0, balance / 14)
+
+    burn_rate = (expense / income * 100) if income > 0 else None
+    health_score = 100.0
+    if balance < 0:
+        health_score -= 40
+    if outstanding_loans > 0:
+        health_score -= 20
+    if burn_rate and burn_rate > 85:
+        health_score -= 20
+    if expense_spike:
+        health_score -= 10
+    health_score = max(0.0, min(100.0, health_score))
+
+    return {
+        "balance": round(balance, 2),
+        "outstanding_loans": round(outstanding_loans, 2),
+        "payback_ready": payback_ready,
+        "suggested_payback_amount": round(min(balance, outstanding_loans) if balance > 0 else 0.0, 2),
+        "recommended_daily_budget": round(recommended_daily_budget, 2),
+        "avg_daily_net": round(avg_daily_net, 2),
+        "projected_balance_7d": round(projected_balance_7d, 2),
+        "today_expense": round(today_expense, 2),
+        "expense_spike": expense_spike,
+        "burn_rate": round(burn_rate, 2) if burn_rate is not None else None,
+        "health_score": round(health_score, 1),
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
+
 @app.get("/analytics/patterns")
 def get_spending_patterns() -> dict:
     """Day-of-week average spending pattern."""
