@@ -1,3 +1,4 @@
+import base64
 from datetime import date as dt_date
 from datetime import datetime, timedelta
 import json
@@ -54,12 +55,35 @@ def get_cors_config() -> dict:
 
 def get_vapid_config() -> dict[str, str | None]:
     private_key = os.getenv("VAPID_PRIVATE_KEY")
-    # If value looks like a file path, resolve it relative to backend dir.
-    # If path does not exist, treat as not configured to avoid runtime 500s.
+
+    # Normalize common environment formats:
+    # - multiline PEM
+    # - escaped newlines (\n)
+    # - base64 payload prefixed with "base64:"
+    # - raw one-line base64 body without BEGIN/END markers
     if private_key:
-        if "\\n" in private_key and "BEGIN" in private_key:
+        private_key = private_key.strip().strip("\"").strip("'")
+
+        if private_key.startswith("base64:"):
+            try:
+                decoded = base64.b64decode(private_key.split(":", 1)[1].encode("utf-8"))
+                private_key = decoded.decode("utf-8")
+            except Exception:
+                private_key = None
+
+        if private_key and "\\n" in private_key and "BEGIN" in private_key:
             private_key = private_key.replace("\\n", "\n")
-        elif not private_key.startswith("-----"):
+
+        if private_key and (not private_key.startswith("-----")):
+            compact = "".join(private_key.split())
+            # If it looks like a raw PKCS8 body, wrap it as PEM.
+            if compact and all(ch.isalnum() or ch in "+/=" for ch in compact) and len(compact) > 120:
+                lines = [compact[i:i + 64] for i in range(0, len(compact), 64)]
+                private_key = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----"
+            else:
+                private_key = private_key
+
+        if private_key and not private_key.startswith("-----"):
             pem_path = (Path(__file__).resolve().parents[1] / private_key).resolve()
             if pem_path.exists():
                 private_key = str(pem_path)
