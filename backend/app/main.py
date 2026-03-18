@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
+import re
 
 from dotenv import load_dotenv
 
@@ -101,11 +102,41 @@ def get_vapid_config() -> dict[str, str | None]:
                 private_key = str(pem_path)
             else:
                 private_key = None
+
+        if private_key and private_key.startswith("-----"):
+            private_key = normalize_private_key_pem(private_key)
+
+        # Validate key shape early to avoid runtime ASN.1 crashes during push send.
+        if private_key and private_key.startswith("-----"):
+            try:
+                from cryptography.hazmat.primitives import serialization
+
+                serialization.load_pem_private_key(private_key.encode("utf-8"), password=None)
+            except Exception:
+                private_key = None
     return {
         "public_key": os.getenv("VAPID_PUBLIC_KEY"),
         "private_key": private_key,
         "claims": os.getenv("VAPID_CLAIMS", "mailto:admin@flowfunds.app"),
     }
+
+
+def normalize_private_key_pem(value: str) -> str | None:
+    text = value.strip().replace("\r", "")
+    match = re.search(
+        r"-----BEGIN PRIVATE KEY-----(.*?)-----END PRIVATE KEY-----",
+        text,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return None
+
+    body = match.group(1)
+    compact = "".join(ch for ch in body if ch.isalnum() or ch in "+/=")
+    if not compact:
+        return None
+    lines = [compact[i:i + 64] for i in range(0, len(compact), 64)]
+    return "-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----"
 
 
 def parse_iso_date(value: str | None) -> dt_date | None:
@@ -1263,6 +1294,17 @@ def send_test_push(payload: dict | None = None) -> dict:
             detail="VAPID keys are not configured. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY on the server.",
         )
 
+    vapid_private_key = vapid["private_key"]
+    temp_key_file = None
+    if vapid_private_key and vapid_private_key.startswith("-----"):
+        import tempfile
+
+        temp_key_file = tempfile.NamedTemporaryFile("w", suffix=".pem", delete=False)
+        temp_key_file.write(vapid_private_key)
+        temp_key_file.flush()
+        temp_key_file.close()
+        vapid_private_key = temp_key_file.name
+
     body = {
         "title": "FlowFunds alert",
         "message": "This is a test push notification.",
@@ -1293,7 +1335,7 @@ def send_test_push(payload: dict | None = None) -> dict:
                 webpush(
                     subscription_info=subscription,
                     data=json.dumps(body),
-                    vapid_private_key=vapid["private_key"],
+                    vapid_private_key=vapid_private_key,
                     vapid_claims={"sub": vapid["claims"]},
                 )
                 sent += 1
@@ -1310,6 +1352,12 @@ def send_test_push(payload: dict | None = None) -> dict:
                 if first_error is None:
                     first_error = str(exc)
         conn.commit()
+
+    if temp_key_file is not None:
+        try:
+            os.unlink(temp_key_file.name)
+        except Exception:
+            pass
 
     return {
         "sent": sent,
