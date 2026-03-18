@@ -20,6 +20,7 @@ import AutoPaybackPlan from "./components/AutoPaybackPlan";
 import RecurringBills from "./components/RecurringBills";
 import GoalTracker from "./components/GoalTracker";
 import AppNavbar from "./components/AppNavbar";
+import TodayLedger from "./components/TodayLedger";
 
 const DEFAULT_SUMMARY = { balance: 0, total_income: 0, total_expense: 0 };
 
@@ -46,6 +47,7 @@ export default function App() {
   const [forecastData, setForecastData] = useState({ forecast: [], historical: [], trend: "stable" });
   const [patternsData, setPatternsData] = useState([]);
   const [todayStats, setTodayStats] = useState({ today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
+  const [todayLedger, setTodayLedger] = useState({ today_income: 0, today_expense: 0, today_net: 0, transactions: [] });
   const [financialHealth, setFinancialHealth] = useState({});
   const [paybackPlan, setPaybackPlan] = useState({ plan: [] });
   const [bills, setBills] = useState([]);
@@ -94,6 +96,7 @@ export default function App() {
         paybackResp,
         patternsResp,
         todayResp,
+        todayLedgerResp,
         healthResp,
         billsResp,
         goalsResp,
@@ -112,6 +115,7 @@ export default function App() {
         api.getPaybackPlan(),
         api.getPatterns(),
         api.getTodayStats(),
+        api.getTodayLedger(),
         api.getFinancialHealth(),
         api.getBills(),
         api.getGoals(),
@@ -131,6 +135,7 @@ export default function App() {
       setPaybackPlan(paybackResp ?? { plan: [] });
       setPatternsData(patternsResp.day_of_week ?? []);
       setTodayStats(todayResp ?? { today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
+      setTodayLedger(todayLedgerResp ?? { today_income: 0, today_expense: 0, today_net: 0, transactions: [] });
       setFinancialHealth(healthResp ?? {});
       setBills(billsResp.bills ?? []);
       setGoals(goalsResp.goals ?? []);
@@ -262,9 +267,9 @@ export default function App() {
         setShowPaybackPrompt(true);
       }
       return true;
-    } catch {
-      setError("Could not add income. Check backend connection and try again.");
-      throw new Error("Income submit failed");
+    } catch (err) {
+      setError(`Could not add income: ${err?.message ?? "try again."}`);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -292,9 +297,9 @@ export default function App() {
       await api.addExpense(payload);
       await refresh();
       return true;
-    } catch {
-      setError("Could not add expense. Check backend connection and try again.");
-      throw new Error("Expense submit failed");
+    } catch (err) {
+      setError(`Could not add expense: ${err?.message ?? "try again."}`);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -306,9 +311,9 @@ export default function App() {
       await api.addLoan(payload);
       await refresh();
       return true;
-    } catch {
-      setError("Could not add payback entry. Check backend connection and try again.");
-      throw new Error("Loan submit failed");
+    } catch (err) {
+      setError(`Could not add payback entry: ${err?.message ?? "try again."}`);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -368,6 +373,16 @@ export default function App() {
     setLoading(true);
     try {
       await api.updateGoal(goalId, { add_amount: amount });
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUpdateTransaction(transactionId, payload) {
+    setLoading(true);
+    try {
+      await api.updateTransaction(transactionId, payload);
       await refresh();
     } finally {
       setLoading(false);
@@ -469,6 +484,8 @@ export default function App() {
               <BudgetPanel summary={summary} />
               <TodaySnapshot stats={todayStats} />
             </section>
+
+            <TodayLedger ledger={todayLedger} />
             <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
           </>
         )}
@@ -573,7 +590,11 @@ export default function App() {
             <TrendChart data={trendData} />
             <section className="grid gap-4 lg:grid-cols-2">
               <CategoryChart data={categoryData} />
-              <TransactionsList transactions={transactions} />
+              <TransactionsList
+                transactions={transactions}
+                onUpdateTransaction={handleUpdateTransaction}
+                loading={loading}
+              />
             </section>
           </>
         )}

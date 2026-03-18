@@ -28,6 +28,11 @@ export default function FinancialCoach({ health, onOpenPayback }) {
         <Metric label="Burn Rate" value={burnRate == null ? "N/A" : `${burnRate.toFixed(1)}%`} tone="rose" />
       </div>
 
+      <p className="mt-3 text-xs text-slate-400">
+        Model logic: projected 7-day = current balance + expected irregular income events - daily expense trend.
+        Expected income events: {Number(health?.expected_income_events_7d ?? 0)} in next 7 days.
+      </p>
+
       {health?.expense_spike && (
         <p className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-2 text-sm text-rose-200">
           Expense spike detected today. Your spending is unusually high compared with your recent pattern.

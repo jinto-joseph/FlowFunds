@@ -14,8 +14,15 @@ async function apiFetch(path, options = {}) {
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || "Request failed");
+    let message = "Request failed";
+    try {
+      const data = await response.json();
+      message = data?.detail || data?.message || data?.error || JSON.stringify(data);
+    } catch {
+      const text = await response.text();
+      if (text) message = text;
+    }
+    throw new Error(message);
   }
 
   return response.json();
@@ -24,6 +31,7 @@ async function apiFetch(path, options = {}) {
 export const api = {
   health: () => apiFetch("/health"),
   getTransactions: () => apiFetch("/transactions"),
+  updateTransaction: (id, payload) => apiFetch(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   getSummary: () => apiFetch("/summary"),
   getCategoryAnalytics: () => apiFetch("/analytics/category"),
   getSurvivalPrediction: () => apiFetch("/predict/survival-days"),
@@ -35,6 +43,7 @@ export const api = {
   getReminders: () => apiFetch("/analytics/reminders"),
   getPatterns: () => apiFetch("/analytics/patterns"),
   getTodayStats: () => apiFetch("/analytics/today"),
+  getTodayLedger: () => apiFetch("/analytics/today-ledger"),
   getPeriodAnalysis: (period) => apiFetch(`/analytics/period?period=${period}`),
   getLoans: () => apiFetch("/loans"),
   addLoan: (payload) => apiFetch("/loans", { method: "POST", body: JSON.stringify(payload) }),

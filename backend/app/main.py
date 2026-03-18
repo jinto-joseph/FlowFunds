@@ -188,6 +188,60 @@ def get_transactions() -> dict:
     return {"transactions": transactions}
 
 
+@app.patch("/transactions/{transaction_id}")
+def update_transaction(transaction_id: int, payload: dict) -> dict:
+    allowed = {"kind", "amount", "source", "category", "date", "note"}
+    incoming = {k: payload[k] for k in payload if k in allowed}
+    if not incoming:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, kind, amount, source, category, date, note FROM transactions WHERE id=?",
+            (transaction_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        kind = incoming.get("kind", row["kind"])
+        if kind not in {"income", "expense"}:
+            raise HTTPException(status_code=400, detail="kind must be income or expense")
+
+        try:
+            amount = float(incoming.get("amount", row["amount"]))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Amount must be a number")
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+
+        date_value = incoming.get("date", row["date"])
+        if parse_iso_date(date_value) is None:
+            raise HTTPException(status_code=400, detail="Invalid date")
+
+        source = incoming.get("source", row["source"])
+        category = incoming.get("category", row["category"])
+        note = incoming.get("note", row["note"]) or ""
+
+        if kind == "income":
+            source = source or "Other"
+            category = None
+        else:
+            category = category or "Misc"
+            source = None
+
+        conn.execute(
+            """
+            UPDATE transactions
+            SET kind=?, amount=?, source=?, category=?, date=?, note=?
+            WHERE id=?
+            """,
+            (kind, amount, source, category, date_value, note, transaction_id),
+        )
+        conn.commit()
+
+    return {"message": "Transaction updated"}
+
+
 @app.get("/loans")
 def get_loans() -> dict:
     with get_conn() as conn:
@@ -234,8 +288,6 @@ def add_loan(payload: dict) -> dict:
     parsed_due = parse_iso_date(due_date)
     if parsed_due is None:
         parsed_due = parsed_borrowed + timedelta(days=30)
-    if parsed_due < parsed_borrowed:
-        raise HTTPException(status_code=400, detail="Due date must be after borrowed date")
 
     with get_conn() as conn:
         cursor = conn.execute(
@@ -773,7 +825,7 @@ def predict_forecast() -> dict:
 
 @app.get("/predict/financial-health")
 def predict_financial_health() -> dict:
-    """ML-style financial health guidance for next 7 days."""
+    """Financial health guidance tuned for irregular income and daily expenses."""
     with get_conn() as conn:
         income = float(
             conn.execute(
@@ -806,6 +858,19 @@ def predict_financial_health() -> dict:
             ORDER BY day ASC
             """
         ).fetchall()
+        income_rows = conn.execute(
+            """
+            SELECT date(date) as day, amount
+            FROM transactions
+            WHERE kind='income' AND date(date) >= date('now', '-120 days')
+            ORDER BY day ASC
+            """
+        ).fetchall()
+        expense_30_sum = float(
+            conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date) >= date('now','-30 days')"
+            ).fetchone()[0]
+        )
 
     balance = income - expense
     payback_ready = outstanding_loans > 0 and balance >= outstanding_loans
@@ -813,12 +878,49 @@ def predict_financial_health() -> dict:
     daily_net = [float(row["income"] or 0) - float(row["expense"] or 0) for row in daily_rows]
     daily_expense = [float(row["expense"] or 0) for row in daily_rows]
 
-    if daily_net:
-        avg_daily_net = sum(daily_net) / len(daily_net)
-    else:
-        avg_daily_net = 0.0
+    avg_daily_net = sum(daily_net) / len(daily_net) if daily_net else 0.0
 
-    projected_balance_7d = balance + avg_daily_net * 7
+    # Expense is usually daily, so normalize by a fixed 30-day window.
+    avg_daily_expense = expense_30_sum / 30 if expense_30_sum > 0 else 0.0
+
+    # Income is irregular. Estimate next 7-day income by event frequency and event size.
+    income_events = [
+        {
+            "day": parse_iso_date(row["day"]),
+            "amount": float(row["amount"]),
+        }
+        for row in income_rows
+        if parse_iso_date(row["day"]) is not None
+    ]
+
+    avg_income_event = (
+        sum(item["amount"] for item in income_events) / len(income_events)
+        if income_events else 0.0
+    )
+
+    event_interval_days = None
+    if len(income_events) >= 2:
+        gaps = []
+        for idx in range(1, len(income_events)):
+            gap = (income_events[idx]["day"] - income_events[idx - 1]["day"]).days
+            if gap > 0:
+                gaps.append(gap)
+        if gaps:
+            gaps.sort()
+            event_interval_days = gaps[len(gaps) // 2]
+
+    expected_income_events_7d = 0
+    if event_interval_days and avg_income_event > 0:
+        last_income_day = income_events[-1]["day"]
+        next_income_day = last_income_day + timedelta(days=event_interval_days)
+        horizon_end = dt_date.today() + timedelta(days=7)
+        while next_income_day <= horizon_end:
+            expected_income_events_7d += 1
+            next_income_day = next_income_day + timedelta(days=event_interval_days)
+
+    projected_income_7d = expected_income_events_7d * avg_income_event
+    projected_expense_7d = avg_daily_expense * 7
+    projected_balance_7d = balance + projected_income_7d - projected_expense_7d
 
     if daily_expense:
         exp_mean = sum(daily_expense) / len(daily_expense)
@@ -833,6 +935,9 @@ def predict_financial_health() -> dict:
     # Keep a repay-first budget: if loans exist, protect that money first.
     spendable_after_loan = max(0.0, balance - outstanding_loans)
     recommended_daily_budget = spendable_after_loan / 7 if spendable_after_loan > 0 else max(0.0, balance / 14)
+    if avg_daily_expense > 0:
+        # Guard against unrealistic budgets when income is sparse.
+        recommended_daily_budget = min(recommended_daily_budget, avg_daily_expense * 1.1 if recommended_daily_budget > 0 else avg_daily_expense)
 
     burn_rate = (expense / income * 100) if income > 0 else None
     health_score = 100.0
@@ -853,6 +958,12 @@ def predict_financial_health() -> dict:
         "suggested_payback_amount": round(min(balance, outstanding_loans) if balance > 0 else 0.0, 2),
         "recommended_daily_budget": round(recommended_daily_budget, 2),
         "avg_daily_net": round(avg_daily_net, 2),
+        "avg_daily_expense": round(avg_daily_expense, 2),
+        "avg_income_event": round(avg_income_event, 2),
+        "income_event_interval_days": event_interval_days,
+        "expected_income_events_7d": expected_income_events_7d,
+        "projected_income_7d": round(projected_income_7d, 2),
+        "projected_expense_7d": round(projected_expense_7d, 2),
         "projected_balance_7d": round(projected_balance_7d, 2),
         "today_expense": round(today_expense, 2),
         "expense_spike": expense_spike,
@@ -917,6 +1028,48 @@ def get_today_stats() -> dict:
         "yesterday": round(yesterday, 2),
         "week_avg": round(week_avg, 2),
         "week_total": round(week_total, 2),
+    }
+
+
+@app.get("/analytics/today-ledger")
+def get_today_ledger() -> dict:
+    with get_conn() as conn:
+        income = float(
+            conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='income' AND date(date)=date('now')"
+            ).fetchone()[0]
+        )
+        expense = float(
+            conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date)=date('now')"
+            ).fetchone()[0]
+        )
+        rows = conn.execute(
+            """
+            SELECT id, kind, amount, source, category, date, note
+            FROM transactions
+            WHERE date(date)=date('now')
+            ORDER BY date DESC, id DESC
+            LIMIT 25
+            """
+        ).fetchall()
+
+    return {
+        "today_income": round(income, 2),
+        "today_expense": round(expense, 2),
+        "today_net": round(income - expense, 2),
+        "transactions": [
+            {
+                "id": row["id"],
+                "kind": row["kind"],
+                "amount": float(row["amount"]),
+                "source": row["source"],
+                "category": row["category"],
+                "date": row["date"],
+                "note": row["note"],
+            }
+            for row in rows
+        ],
     }
 
 
