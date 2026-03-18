@@ -7,14 +7,22 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
   const [source, setSource] = useState("");
   const [category, setCategory] = useState(categories[0]);
   const [note, setNote] = useState("");
+  const [formError, setFormError] = useState("");
 
   const title = useMemo(() => (mode === "income" ? "Add Income" : "Add Expense"), [mode]);
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
+    setFormError("");
+    const normalized = amount.replace(",", ".").trim();
+    const numericAmount = Number(normalized);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      setFormError("Enter a valid amount greater than 0.");
+      return;
+    }
 
     const payload = {
-      amount: Number(amount),
+      amount: numericAmount,
       note,
       date: new Date().toISOString()
     };
@@ -22,10 +30,14 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
     if (mode === "income") payload.source = source || "Other";
     if (mode === "expense") payload.category = category;
 
-    onSubmit(payload);
-    setAmount("");
-    setSource("");
-    setNote("");
+    try {
+      await onSubmit(payload);
+      setAmount("");
+      setSource("");
+      setNote("");
+    } catch {
+      setFormError("Could not save transaction. Please try again.");
+    }
   }
 
   return (
@@ -34,13 +46,18 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
 
       <label className="mb-2 block text-sm text-slate-300">Amount</label>
       <input
-        type="number"
-        min="1"
+        type="text"
+        inputMode="decimal"
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
         className="mb-3 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+        placeholder="e.g. 500 or 500.50"
         required
       />
+
+      {formError && (
+        <p className="mb-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{formError}</p>
+      )}
 
       {mode === "income" ? (
         <>

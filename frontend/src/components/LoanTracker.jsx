@@ -4,18 +4,32 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
   const [person, setPerson] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [formError, setFormError] = useState("");
 
   const unpaidCount = useMemo(() => loans.filter((l) => !l.is_paid).length, [loans]);
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    const value = Number(amount);
-    if (!person.trim() || value <= 0) return;
+    setFormError("");
+    const normalized = amount.replace(",", ".").trim();
+    const value = Number(normalized);
+    if (!person.trim()) {
+      setFormError("Enter the lender name.");
+      return;
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      setFormError("Enter a valid amount greater than 0.");
+      return;
+    }
 
-    onAddLoan({ person: person.trim(), amount: value, note });
-    setPerson("");
-    setAmount("");
-    setNote("");
+    try {
+      await onAddLoan({ person: person.trim(), amount: value, note });
+      setPerson("");
+      setAmount("");
+      setNote("");
+    } catch {
+      setFormError("Could not save payback entry. Please try again.");
+    }
   }
 
   return (
@@ -46,12 +60,12 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
           required
         />
         <input
-          type="number"
-          min="1"
+          type="text"
+          inputMode="decimal"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
-          placeholder="Amount"
+          placeholder="Amount (e.g. 500 or 500.50)"
           required
         />
         <input
@@ -68,6 +82,10 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
           Add Payback
         </button>
       </form>
+
+      {formError && (
+        <p className="mt-2 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{formError}</p>
+      )}
 
       <ul className="mt-4 space-y-2">
         {loans.length === 0 && <li className="text-sm text-slate-400">No loan entries yet.</li>}

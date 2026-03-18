@@ -217,6 +217,10 @@ export default function App() {
       if (hadUnpaidLoans) {
         setShowPaybackPrompt(true);
       }
+      return true;
+    } catch {
+      setError("Could not add income. Check backend connection and try again.");
+      throw new Error("Income submit failed");
     } finally {
       setLoading(false);
     }
@@ -243,6 +247,10 @@ export default function App() {
     try {
       await api.addExpense(payload);
       await refresh();
+      return true;
+    } catch {
+      setError("Could not add expense. Check backend connection and try again.");
+      throw new Error("Expense submit failed");
     } finally {
       setLoading(false);
     }
@@ -253,6 +261,10 @@ export default function App() {
     try {
       await api.addLoan(payload);
       await refresh();
+      return true;
+    } catch {
+      setError("Could not add payback entry. Check backend connection and try again.");
+      throw new Error("Loan submit failed");
     } finally {
       setLoading(false);
     }
