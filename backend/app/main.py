@@ -54,11 +54,17 @@ def get_cors_config() -> dict:
 
 def get_vapid_config() -> dict[str, str | None]:
     private_key = os.getenv("VAPID_PRIVATE_KEY")
-    # If value looks like a file path, resolve it relative to backend dir
-    if private_key and not private_key.startswith("-----"):
-        pem_path = (Path(__file__).resolve().parents[1] / private_key).resolve()
-        if pem_path.exists():
-            private_key = str(pem_path)
+    # If value looks like a file path, resolve it relative to backend dir.
+    # If path does not exist, treat as not configured to avoid runtime 500s.
+    if private_key:
+        if "\\n" in private_key and "BEGIN" in private_key:
+            private_key = private_key.replace("\\n", "\n")
+        elif not private_key.startswith("-----"):
+            pem_path = (Path(__file__).resolve().parents[1] / private_key).resolve()
+            if pem_path.exists():
+                private_key = str(pem_path)
+            else:
+                private_key = None
     return {
         "public_key": os.getenv("VAPID_PUBLIC_KEY"),
         "private_key": private_key,
@@ -1063,7 +1069,10 @@ def add_push_subscription(payload: dict) -> dict:
 def send_test_push(payload: dict | None = None) -> dict:
     vapid = get_vapid_config()
     if not vapid["public_key"] or not vapid["private_key"]:
-        raise HTTPException(status_code=400, detail="VAPID keys are not configured")
+        raise HTTPException(
+            status_code=400,
+            detail="VAPID keys are not configured. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY on the server.",
+        )
 
     body = {
         "title": "FlowFunds alert",
@@ -1075,9 +1084,17 @@ def send_test_push(payload: dict | None = None) -> dict:
     sent = 0
     removed = 0
     failures = 0
+    first_error = None
 
     with get_conn() as conn:
         rows = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
+        if not rows:
+            return {
+                "sent": 0,
+                "removed": 0,
+                "failures": 0,
+                "message": "No push subscriptions saved yet. Enable push alerts in the browser first.",
+            }
         for row in rows:
             subscription = {
                 "endpoint": row["endpoint"],
@@ -1094,9 +1111,20 @@ def send_test_push(payload: dict | None = None) -> dict:
             except WebPushException as exc:
                 status_code = getattr(exc.response, "status_code", None) if getattr(exc, "response", None) else None
                 failures += 1
+                if first_error is None:
+                    first_error = str(exc)
                 if status_code in {404, 410}:
                     conn.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (row["endpoint"],))
                     removed += 1
+            except Exception as exc:
+                failures += 1
+                if first_error is None:
+                    first_error = str(exc)
         conn.commit()
 
-    return {"sent": sent, "removed": removed, "failures": failures}
+    return {
+        "sent": sent,
+        "removed": removed,
+        "failures": failures,
+        "error": first_error,
+    }

@@ -238,10 +238,16 @@ export default function App() {
 
   async function sendTestPush() {
     try {
-      await api.sendTestPush({ title: "FlowFunds test", message: "Push delivery check." });
-      setPushStatus("Test push requested from backend");
+      const result = await api.sendTestPush({ title: "FlowFunds test", message: "Push delivery check." });
+      if (result?.message) {
+        setPushStatus(result.message);
+      } else if (result?.failures) {
+        setPushStatus(`Test push failed for ${result.failures} subscription(s): ${result.error ?? "unknown error"}`);
+      } else {
+        setPushStatus("Test push requested from backend");
+      }
     } catch (sendError) {
-      setPushStatus("Test push failed (check backend VAPID keys)");
+      setPushStatus(`Test push failed: ${sendError?.message ?? "check backend VAPID keys"}`);
     }
   }
 
