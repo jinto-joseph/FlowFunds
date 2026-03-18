@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import date as dt_date
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -63,6 +64,26 @@ def get_vapid_config() -> dict[str, str | None]:
         "private_key": private_key,
         "claims": os.getenv("VAPID_CLAIMS", "mailto:admin@flowfunds.app"),
     }
+
+
+def parse_iso_date(value: str | None) -> dt_date | None:
+    if not value:
+        return None
+    try:
+        return dt_date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def add_frequency_days(start: dt_date, frequency: str) -> dt_date:
+    return start + timedelta(days=7 if frequency == "weekly" else 30)
+
+
+def roll_due_date_forward(due: dt_date, frequency: str, today: dt_date) -> dt_date:
+    next_due = due
+    while next_due < today:
+        next_due = add_frequency_days(next_due, frequency)
+    return next_due
 
 app = FastAPI(title="FlowFunds API", version="0.1.0")
 
@@ -166,7 +187,7 @@ def get_loans() -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT id, person, amount, note, borrowed_date, is_paid, paid_date
+            SELECT id, person, amount, note, borrowed_date, due_date, is_paid, paid_date
             FROM loans
             ORDER BY is_paid ASC, borrowed_date DESC, id DESC
             """
@@ -179,6 +200,7 @@ def get_loans() -> dict:
             "amount": float(row["amount"]),
             "note": row["note"] or "",
             "borrowed_date": row["borrowed_date"],
+            "due_date": row["due_date"],
             "is_paid": bool(row["is_paid"]),
             "paid_date": row["paid_date"],
         }
@@ -195,19 +217,27 @@ def add_loan(payload: dict) -> dict:
     amount = float(payload.get("amount") or 0)
     note = (payload.get("note") or "").strip()
     borrowed_date = payload.get("borrowed_date") or datetime.utcnow().isoformat()
+    due_date = payload.get("due_date")
 
     if not person:
         raise HTTPException(status_code=400, detail="Person name is required")
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be greater than 0")
 
+    parsed_borrowed = parse_iso_date(borrowed_date) or dt_date.today()
+    parsed_due = parse_iso_date(due_date)
+    if parsed_due is None:
+        parsed_due = parsed_borrowed + timedelta(days=30)
+    if parsed_due < parsed_borrowed:
+        raise HTTPException(status_code=400, detail="Due date must be after borrowed date")
+
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO loans (person, amount, note, borrowed_date, is_paid, paid_date)
-            VALUES (?, ?, ?, ?, 0, NULL)
+            INSERT INTO loans (person, amount, note, borrowed_date, due_date, is_paid, paid_date)
+            VALUES (?, ?, ?, ?, ?, 0, NULL)
             """,
-            (person, amount, note, borrowed_date),
+            (person, amount, note, borrowed_date, parsed_due.isoformat()),
         )
         conn.commit()
 
@@ -235,6 +265,365 @@ def update_loan(loan_id: int, payload: dict) -> dict:
         conn.commit()
 
     return {"message": "Loan updated", "is_paid": paid}
+
+
+@app.get("/predict/payback-plan")
+def get_payback_plan() -> dict:
+    with get_conn() as conn:
+        income = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0])
+        expense = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0])
+        rows = conn.execute(
+            """
+            SELECT id, person, amount, borrowed_date, due_date
+            FROM loans
+            WHERE is_paid=0
+            ORDER BY due_date ASC, borrowed_date ASC
+            """
+        ).fetchall()
+
+    balance = income - expense
+    today = dt_date.today()
+    plan_items = []
+    total_outstanding = 0.0
+    total_daily_target = 0.0
+
+    for row in rows:
+        borrowed = parse_iso_date(row["borrowed_date"]) or today
+        due = parse_iso_date(row["due_date"]) or (borrowed + timedelta(days=30))
+        days_left = max((due - today).days, 1)
+        amount = float(row["amount"])
+        daily_target = amount / days_left
+        total_outstanding += amount
+        total_daily_target += daily_target
+        plan_items.append(
+            {
+                "id": row["id"],
+                "person": row["person"],
+                "amount": round(amount, 2),
+                "due_date": due.isoformat(),
+                "days_left": days_left,
+                "daily_target": round(daily_target, 2),
+                "risk": "high" if days_left <= 3 else "medium" if days_left <= 10 else "normal",
+            }
+        )
+
+    can_clear_now = total_outstanding > 0 and balance >= total_outstanding
+    recommended_daily = max(total_daily_target, 0.0)
+    affordable_daily = max(balance, 0.0) / 30 if balance > 0 else 0.0
+
+    return {
+        "balance": round(balance, 2),
+        "outstanding_total": round(total_outstanding, 2),
+        "can_clear_now": can_clear_now,
+        "suggested_lump_sum": round(min(balance, total_outstanding) if balance > 0 else 0.0, 2),
+        "recommended_daily_target": round(recommended_daily, 2),
+        "affordable_daily_target": round(affordable_daily, 2),
+        "on_track": affordable_daily >= recommended_daily if recommended_daily > 0 else True,
+        "plan": plan_items,
+    }
+
+
+def refresh_bill_due_dates(conn) -> None:
+    today = dt_date.today()
+    rows = conn.execute(
+        "SELECT id, frequency, next_due_date FROM recurring_bills WHERE is_active=1"
+    ).fetchall()
+    for row in rows:
+        due = parse_iso_date(row["next_due_date"])
+        if due is None:
+            continue
+        fresh_due = roll_due_date_forward(due, row["frequency"], today)
+        if fresh_due != due:
+            conn.execute(
+                "UPDATE recurring_bills SET next_due_date=? WHERE id=?",
+                (fresh_due.isoformat(), row["id"]),
+            )
+    conn.commit()
+
+
+@app.get("/bills")
+def get_bills() -> dict:
+    with get_conn() as conn:
+        refresh_bill_due_dates(conn)
+        rows = conn.execute(
+            """
+            SELECT id, name, amount, frequency, next_due_date, note, is_active, last_paid_date, created_at
+            FROM recurring_bills
+            ORDER BY is_active DESC, next_due_date ASC, id DESC
+            """
+        ).fetchall()
+
+    today = dt_date.today()
+    bills = []
+    for row in rows:
+        due = parse_iso_date(row["next_due_date"]) or today
+        days_left = (due - today).days
+        bills.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "amount": round(float(row["amount"]), 2),
+                "frequency": row["frequency"],
+                "next_due_date": row["next_due_date"],
+                "note": row["note"] or "",
+                "is_active": bool(row["is_active"]),
+                "last_paid_date": row["last_paid_date"],
+                "created_at": row["created_at"],
+                "days_left": days_left,
+                "due_soon": days_left <= 3,
+            }
+        )
+
+    return {"bills": bills}
+
+
+@app.post("/bills")
+def add_bill(payload: dict) -> dict:
+    name = (payload.get("name") or "").strip()
+    amount = float(payload.get("amount") or 0)
+    frequency = (payload.get("frequency") or "monthly").strip().lower()
+    next_due_date = payload.get("next_due_date") or dt_date.today().isoformat()
+    note = (payload.get("note") or "").strip()
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Bill name is required")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+    if frequency not in {"weekly", "monthly"}:
+        raise HTTPException(status_code=400, detail="Frequency must be weekly or monthly")
+    parsed_due = parse_iso_date(next_due_date)
+    if parsed_due is None:
+        raise HTTPException(status_code=400, detail="Invalid next due date")
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO recurring_bills (name, amount, frequency, next_due_date, note, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+            """,
+            (name, amount, frequency, parsed_due.isoformat(), note, datetime.utcnow().isoformat()),
+        )
+        conn.commit()
+
+    return {"id": cursor.lastrowid, "message": "Recurring bill added"}
+
+
+@app.patch("/bills/{bill_id}")
+def update_bill(bill_id: int, payload: dict) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, frequency, next_due_date, is_active FROM recurring_bills WHERE id=?",
+            (bill_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Bill not found")
+
+        is_active = row["is_active"]
+        next_due = parse_iso_date(row["next_due_date"]) or dt_date.today()
+        frequency = row["frequency"]
+        last_paid_date = None
+
+        if "is_active" in payload:
+            is_active = 1 if bool(payload.get("is_active")) else 0
+
+        if payload.get("mark_paid"):
+            last_paid_date = dt_date.today().isoformat()
+            next_due = add_frequency_days(next_due, frequency)
+
+        if payload.get("next_due_date"):
+            parsed_next_due = parse_iso_date(payload.get("next_due_date"))
+            if parsed_next_due is None:
+                raise HTTPException(status_code=400, detail="Invalid next due date")
+            next_due = parsed_next_due
+
+        conn.execute(
+            """
+            UPDATE recurring_bills
+            SET is_active=?, next_due_date=?, last_paid_date=COALESCE(?, last_paid_date)
+            WHERE id=?
+            """,
+            (is_active, next_due.isoformat(), last_paid_date, bill_id),
+        )
+        conn.commit()
+
+    return {"message": "Bill updated"}
+
+
+@app.get("/analytics/reminders")
+def get_reminders() -> dict:
+    with get_conn() as conn:
+        refresh_bill_due_dates(conn)
+        bills = conn.execute(
+            """
+            SELECT id, name, amount, next_due_date
+            FROM recurring_bills
+            WHERE is_active=1
+            ORDER BY next_due_date ASC
+            """
+        ).fetchall()
+        loans = conn.execute(
+            "SELECT id, person, amount, due_date FROM loans WHERE is_paid=0 ORDER BY due_date ASC"
+        ).fetchall()
+
+    today = dt_date.today()
+    upcoming_bills = []
+    for row in bills:
+        due = parse_iso_date(row["next_due_date"]) or today
+        if (due - today).days <= 7:
+            upcoming_bills.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "amount": round(float(row["amount"]), 2),
+                    "due_date": due.isoformat(),
+                    "days_left": (due - today).days,
+                }
+            )
+
+    upcoming_loans = []
+    for row in loans:
+        due = parse_iso_date(row["due_date"]) or (today + timedelta(days=30))
+        if (due - today).days <= 7:
+            upcoming_loans.append(
+                {
+                    "id": row["id"],
+                    "person": row["person"],
+                    "amount": round(float(row["amount"]), 2),
+                    "due_date": due.isoformat(),
+                    "days_left": (due - today).days,
+                }
+            )
+
+    return {"upcoming_bills": upcoming_bills, "upcoming_loans": upcoming_loans}
+
+
+@app.get("/goals")
+def get_goals() -> dict:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, title, target_amount, current_amount, target_date, note,
+                   is_completed, created_at, completed_at
+            FROM savings_goals
+            ORDER BY is_completed ASC, id DESC
+            """
+        ).fetchall()
+
+        daily_net_rows = conn.execute(
+            """
+            SELECT date(date) as day,
+                   SUM(CASE WHEN kind='income' THEN amount ELSE 0 END)
+                   - SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END) as net
+            FROM transactions
+            WHERE date(date) >= date('now', '-30 days')
+            GROUP BY date(date)
+            """
+        ).fetchall()
+
+    avg_daily_savings = 0.0
+    if daily_net_rows:
+        avg_daily_savings = sum(float(r["net"] or 0) for r in daily_net_rows) / len(daily_net_rows)
+
+    goals = []
+    today = dt_date.today()
+    for row in rows:
+        target = float(row["target_amount"])
+        current = float(row["current_amount"])
+        remaining = max(0.0, target - current)
+        eta_days = int(remaining / avg_daily_savings) if avg_daily_savings > 0 and remaining > 0 else None
+        projected_date = (today + timedelta(days=eta_days)).isoformat() if eta_days is not None else None
+        goals.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "target_amount": round(target, 2),
+                "current_amount": round(current, 2),
+                "remaining_amount": round(remaining, 2),
+                "progress": round((current / target * 100), 1) if target > 0 else 0,
+                "target_date": row["target_date"],
+                "note": row["note"] or "",
+                "is_completed": bool(row["is_completed"]),
+                "created_at": row["created_at"],
+                "completed_at": row["completed_at"],
+                "eta_days": eta_days,
+                "projected_date": projected_date,
+            }
+        )
+
+    return {"goals": goals, "avg_daily_savings": round(avg_daily_savings, 2)}
+
+
+@app.post("/goals")
+def add_goal(payload: dict) -> dict:
+    title = (payload.get("title") or "").strip()
+    target_amount = float(payload.get("target_amount") or 0)
+    current_amount = float(payload.get("current_amount") or 0)
+    target_date = payload.get("target_date")
+    note = (payload.get("note") or "").strip()
+
+    if not title:
+        raise HTTPException(status_code=400, detail="Goal title is required")
+    if target_amount <= 0:
+        raise HTTPException(status_code=400, detail="Target amount must be greater than 0")
+    if current_amount < 0:
+        raise HTTPException(status_code=400, detail="Current amount cannot be negative")
+
+    if target_date and parse_iso_date(target_date) is None:
+        raise HTTPException(status_code=400, detail="Invalid target date")
+
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO savings_goals (title, target_amount, current_amount, target_date, note, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (title, target_amount, current_amount, target_date, note, datetime.utcnow().isoformat()),
+        )
+        conn.commit()
+
+    return {"id": cursor.lastrowid, "message": "Goal created"}
+
+
+@app.patch("/goals/{goal_id}")
+def update_goal(goal_id: int, payload: dict) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, target_amount, current_amount, is_completed FROM savings_goals WHERE id=?",
+            (goal_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Goal not found")
+
+        current_amount = float(row["current_amount"])
+        target_amount = float(row["target_amount"])
+        is_completed = bool(row["is_completed"])
+
+        if "add_amount" in payload:
+            current_amount += float(payload.get("add_amount") or 0)
+        if "current_amount" in payload:
+            current_amount = float(payload.get("current_amount") or 0)
+
+        if current_amount < 0:
+            raise HTTPException(status_code=400, detail="Current amount cannot be negative")
+
+        if "is_completed" in payload:
+            is_completed = bool(payload.get("is_completed"))
+        elif current_amount >= target_amount:
+            is_completed = True
+
+        completed_at = datetime.utcnow().isoformat() if is_completed else None
+
+        conn.execute(
+            """
+            UPDATE savings_goals
+            SET current_amount=?, is_completed=?, completed_at=?
+            WHERE id=?
+            """,
+            (current_amount, 1 if is_completed else 0, completed_at, goal_id),
+        )
+        conn.commit()
+
+    return {"message": "Goal updated"}
 
 
 @app.get("/summary", response_model=Summary)

@@ -44,9 +44,48 @@ def init_db() -> None:
                 amount REAL NOT NULL,
                 note TEXT DEFAULT '',
                 borrowed_date TEXT NOT NULL,
+                due_date TEXT,
                 is_paid INTEGER NOT NULL DEFAULT 0,
                 paid_date TEXT
             )
             """
         )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS recurring_bills (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                frequency TEXT NOT NULL CHECK(frequency IN ('weekly','monthly')),
+                next_due_date TEXT NOT NULL,
+                note TEXT DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                last_paid_date TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS savings_goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                target_amount REAL NOT NULL,
+                current_amount REAL NOT NULL DEFAULT 0,
+                target_date TEXT,
+                note TEXT DEFAULT '',
+                is_completed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            )
+            """
+        )
+
+        # Migration-safe: add due_date column if older DB was created before this field existed.
+        loan_columns = {row["name"] for row in conn.execute("PRAGMA table_info(loans)").fetchall()}
+        if "due_date" not in loan_columns:
+            conn.execute("ALTER TABLE loans ADD COLUMN due_date TEXT")
+
         conn.commit()

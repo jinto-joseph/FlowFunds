@@ -4,6 +4,7 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
   const [person, setPerson] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [formError, setFormError] = useState("");
 
   const unpaidCount = useMemo(() => loans.filter((l) => !l.is_paid).length, [loans]);
@@ -23,10 +24,11 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
     }
 
     try {
-      await onAddLoan({ person: person.trim(), amount: value, note });
+      await onAddLoan({ person: person.trim(), amount: value, note, due_date: dueDate || null });
       setPerson("");
       setAmount("");
       setNote("");
+      setDueDate("");
     } catch {
       setFormError("Could not save payback entry. Please try again.");
     }
@@ -51,7 +53,7 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="grid gap-2 md:grid-cols-4">
+      <form onSubmit={handleSubmit} className="grid gap-2 md:grid-cols-5">
         <input
           value={person}
           onChange={(e) => setPerson(e.target.value)}
@@ -74,10 +76,17 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
           className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
           placeholder="Note (optional)"
         />
+        <input
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+          placeholder="Due date"
+        />
         <button
           type="submit"
           disabled={loading}
-          className="rounded-lg bg-amber-500/90 px-3 py-2 font-medium text-slate-900 hover:bg-amber-400 disabled:opacity-60"
+          className="rounded-lg bg-amber-500/90 px-3 py-2 font-medium text-slate-900 hover:bg-amber-400 disabled:opacity-60 md:col-span-5"
         >
           Add Payback
         </button>
@@ -120,6 +129,11 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
                 {loan.borrowed_date && (
                   <p className="text-xs text-slate-500">
                     Borrowed: {new Date(loan.borrowed_date).toLocaleDateString("en-IN")}
+                  </p>
+                )}
+                {loan.due_date && (
+                  <p className="text-xs text-amber-500/80">
+                    Due: {new Date(loan.due_date).toLocaleDateString("en-IN")}
                   </p>
                 )}
                 {loan.is_paid && loan.paid_date && (

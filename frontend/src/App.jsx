@@ -16,6 +16,9 @@ import LoanTracker from "./components/LoanTracker";
 import InsightsPage from "./components/InsightsPage";
 import PaybackPromptModal from "./components/PaybackPromptModal";
 import FinancialCoach from "./components/FinancialCoach";
+import AutoPaybackPlan from "./components/AutoPaybackPlan";
+import RecurringBills from "./components/RecurringBills";
+import GoalTracker from "./components/GoalTracker";
 
 const DEFAULT_SUMMARY = { balance: 0, total_income: 0, total_expense: 0 };
 
@@ -43,6 +46,11 @@ export default function App() {
   const [patternsData, setPatternsData] = useState([]);
   const [todayStats, setTodayStats] = useState({ today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
   const [financialHealth, setFinancialHealth] = useState({});
+  const [paybackPlan, setPaybackPlan] = useState({ plan: [] });
+  const [bills, setBills] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [avgDailySavings, setAvgDailySavings] = useState(0);
+  const [reminders, setReminders] = useState({ upcoming_bills: [], upcoming_loans: [] });
   const [loans, setLoans] = useState([]);
   const [outstandingLoanTotal, setOutstandingLoanTotal] = useState(0);
   const [weeklyAnalysis, setWeeklyAnalysis] = useState({ categories: [], daily: [] });
@@ -82,9 +90,13 @@ export default function App() {
         trendResp,
         tipsResp,
         forecastResp,
+        paybackResp,
         patternsResp,
         todayResp,
         healthResp,
+        billsResp,
+        goalsResp,
+        remindersResp,
         loansResp,
         weeklyResp,
         monthlyResp,
@@ -96,9 +108,13 @@ export default function App() {
         api.getDailyTrend(),
         api.getTips(),
         api.getForecast(),
+        api.getPaybackPlan(),
         api.getPatterns(),
         api.getTodayStats(),
         api.getFinancialHealth(),
+        api.getBills(),
+        api.getGoals(),
+        api.getReminders(),
         api.getLoans(),
         api.getPeriodAnalysis("weekly"),
         api.getPeriodAnalysis("monthly"),
@@ -111,9 +127,14 @@ export default function App() {
       setTrendData(trendResp.days ?? []);
       setTips(tipsResp.tips ?? []);
       setForecastData(forecastResp ?? { forecast: [], historical: [], trend: "stable" });
+      setPaybackPlan(paybackResp ?? { plan: [] });
       setPatternsData(patternsResp.day_of_week ?? []);
       setTodayStats(todayResp ?? { today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
       setFinancialHealth(healthResp ?? {});
+      setBills(billsResp.bills ?? []);
+      setGoals(goalsResp.goals ?? []);
+      setAvgDailySavings(Number(goalsResp.avg_daily_savings ?? 0));
+      setReminders(remindersResp ?? { upcoming_bills: [], upcoming_loans: [] });
       setLoans(loansResp.loans ?? []);
       setOutstandingLoanTotal(Number(loansResp.outstanding_total ?? 0));
       setWeeklyAnalysis(weeklyResp ?? { categories: [], daily: [] });
@@ -296,6 +317,56 @@ export default function App() {
     }
   }
 
+  async function handleAddBill(payload) {
+    setLoading(true);
+    try {
+      await api.addBill(payload);
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMarkBillPaid(billId) {
+    setLoading(true);
+    try {
+      await api.updateBill(billId, { mark_paid: true });
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleToggleBillActive(billId, isActive) {
+    setLoading(true);
+    try {
+      await api.updateBill(billId, { is_active: isActive });
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAddGoal(payload) {
+    setLoading(true);
+    try {
+      await api.addGoal(payload);
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAddGoalProgress(goalId, amount) {
+    setLoading(true);
+    try {
+      await api.updateGoal(goalId, { add_amount: amount });
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <>
       {showPaybackPrompt && (
@@ -456,6 +527,27 @@ export default function App() {
             />
 
             <section className="grid gap-4 lg:grid-cols-2">
+              <AutoPaybackPlan plan={paybackPlan} onOpenPayback={() => setShowPaybackPrompt(true)} />
+              <RecurringBills
+                bills={bills}
+                reminders={reminders.upcoming_bills ?? []}
+                onAddBill={handleAddBill}
+                onMarkPaid={handleMarkBillPaid}
+                onToggleActive={handleToggleBillActive}
+                loading={loading}
+              />
+            </section>
+
+            {(reminders.upcoming_bills?.length > 0 || reminders.upcoming_loans?.length > 0) && (
+              <section className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">
+                <p className="font-medium">Upcoming reminders (next 7 days)</p>
+                <p className="text-sm mt-1">
+                  Bills due: {reminders.upcoming_bills?.length ?? 0} · Loan dues: {reminders.upcoming_loans?.length ?? 0}
+                </p>
+              </section>
+            )}
+
+            <section className="grid gap-4 lg:grid-cols-2">
               <TransactionForm mode="income" onSubmit={handleIncome} loading={loading} />
               <TransactionForm mode="expense" onSubmit={handleExpense} loading={loading} />
             </section>
@@ -484,6 +576,14 @@ export default function App() {
             </section>
 
             <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
+
+            <GoalTracker
+              goals={goals}
+              avgDailySavings={avgDailySavings}
+              onAddGoal={handleAddGoal}
+              onAddProgress={handleAddGoalProgress}
+              loading={loading}
+            />
 
             <section className="grid gap-4 lg:grid-cols-2">
               <SpendingTips tips={tips} />
