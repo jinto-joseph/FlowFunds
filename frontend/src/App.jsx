@@ -19,6 +19,7 @@ import FinancialCoach from "./components/FinancialCoach";
 import AutoPaybackPlan from "./components/AutoPaybackPlan";
 import RecurringBills from "./components/RecurringBills";
 import GoalTracker from "./components/GoalTracker";
+import AppNavbar from "./components/AppNavbar";
 
 const DEFAULT_SUMMARY = { balance: 0, total_income: 0, total_expense: 0 };
 
@@ -384,6 +385,7 @@ export default function App() {
         balance={summary.balance}
         hasUnpaidLoans={hasUnpaidLoans}
         paybackReady={canPaybackNow}
+        sceneMode={activePage}
       />
       <main className="relative z-10 mx-auto min-h-screen max-w-6xl space-y-5 px-4 py-6 text-slate-100">
         <header className="space-y-1 rounded-xl border border-slate-700/50 bg-slate-950/70 p-4 backdrop-blur-sm">
@@ -426,36 +428,47 @@ export default function App() {
             </button>
           </div>
           <p className="pt-2 text-xs text-slate-400">{pushStatus}</p>
-          <div className="mt-3 inline-flex overflow-hidden rounded-lg border border-slate-600">
-            <button
-              type="button"
-              onClick={() => setActivePage("dashboard")}
-              className={`px-3 py-1.5 text-sm ${
-                activePage === "dashboard" ? "bg-cyan-500/20 text-cyan-200" : "bg-slate-900 text-slate-300"
-              }`}
-            >
-              Dashboard
-            </button>
-            <button
-              type="button"
-              onClick={() => setActivePage("insights")}
-              className={`px-3 py-1.5 text-sm ${
-                activePage === "insights" ? "bg-cyan-500/20 text-cyan-200" : "bg-slate-900 text-slate-300"
-              }`}
-            >
-              Weekly & Monthly Analysis
-            </button>
-          </div>
         </header>
+
+        <AppNavbar activePage={activePage} onChange={setActivePage} />
 
         {error && <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-200">{error}</p>}
 
-        {activePage === "dashboard" ? (
+        {activePage === "dashboard" && (
           <>
             <SummaryCards summary={summary} prediction={prediction} />
-
             <EmergencyAlert balance={summary.balance} threshold={threshold} survivalDays={prediction.days_left} />
+            <section className="grid gap-4 lg:grid-cols-2">
+              <TransactionForm mode="income" onSubmit={handleIncome} loading={loading} />
+              <TransactionForm mode="expense" onSubmit={handleExpense} loading={loading} />
+            </section>
+            <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="font-medium">Low balance threshold</p>
+                <input
+                  type="number"
+                  min="0"
+                  value={threshold}
+                  onChange={(e) => setThreshold(Number(e.target.value || 0))}
+                  className="w-36 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                />
+              </div>
+              {lowBalance && (
+                <p className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-2 text-rose-200">
+                  ⚠️ Warning: balance is below your threshold. Spend only in emergency condition.
+                </p>
+              )}
+            </section>
+            <section className="grid gap-4 lg:grid-cols-2">
+              <BudgetPanel summary={summary} />
+              <TodaySnapshot stats={todayStats} />
+            </section>
+            <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
+          </>
+        )}
 
+        {activePage === "loans" && (
+          <>
             {summary.balance < 0 && (
               <div className="rounded-xl border-2 border-red-500/70 bg-red-950/30 p-4">
                 <div className="flex items-start gap-3">
@@ -463,40 +476,21 @@ export default function App() {
                   <div>
                     <p className="font-bold text-red-300 text-lg">You are in Debt!</p>
                     <p className="text-sm text-red-200 mt-1">
-                      Your balance is{" "}
-                      <span className="font-bold">₹{Math.abs(summary.balance).toFixed(2)} in the negative</span>.
-                      Your expenses exceed your income — you are spending borrowed money.
+                      Your balance is <span className="font-bold">₹{Math.abs(summary.balance).toFixed(2)} in the negative</span>.
+                      Your expenses exceed your income.
                     </p>
-                    {!hasUnpaidLoans && (
-                      <p className="text-xs text-red-300/70 mt-2">
-                        💡 Add the lender's name in the Loan Tracker below so you can track the payback.
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>
             )}
-
             {hasUnpaidLoans && (
               <div className="rounded-xl border-2 border-amber-500/60 bg-amber-950/30 p-4">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">⚠️</span>
-                  <div>
-                    <p className="font-bold text-amber-300">Unpaid Paybacks Remaining</p>
-                    <p className="text-sm text-amber-200 mt-1">
-                      You still owe{" "}
-                      <span className="font-bold">₹{outstandingLoanTotal.toFixed(2)}</span> to{" "}
-                      {loans.filter((l) => !l.is_paid).length} person(s).
-                      This alert will clear only after you mark each one as paid.
-                    </p>
-                    <p className="text-xs text-amber-300/70 mt-2">
-                      🔒 Checkbox = you have <em>actually</em> returned the money.
-                    </p>
-                  </div>
-                </div>
+                <p className="font-bold text-amber-300">Unpaid Paybacks Remaining</p>
+                <p className="text-sm text-amber-200 mt-1">
+                  You still owe <span className="font-bold">₹{outstandingLoanTotal.toFixed(2)}</span> to {loans.filter((l) => !l.is_paid).length} person(s).
+                </p>
               </div>
             )}
-
             {canPaybackNow && (
               <div className="rounded-xl border-2 border-emerald-500/60 bg-emerald-950/30 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -516,7 +510,6 @@ export default function App() {
                 </div>
               </div>
             )}
-
             <LoanTracker
               loans={loans}
               outstandingTotal={outstandingLoanTotal}
@@ -525,7 +518,6 @@ export default function App() {
               onTogglePaid={handleToggleLoanPaid}
               loading={loading}
             />
-
             <section className="grid gap-4 lg:grid-cols-2">
               <AutoPaybackPlan plan={paybackPlan} onOpenPayback={() => setShowPaybackPrompt(true)} />
               <RecurringBills
@@ -537,7 +529,6 @@ export default function App() {
                 loading={loading}
               />
             </section>
-
             {(reminders.upcoming_bills?.length > 0 || reminders.upcoming_loans?.length > 0) && (
               <section className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">
                 <p className="font-medium">Upcoming reminders (next 7 days)</p>
@@ -546,37 +537,11 @@ export default function App() {
                 </p>
               </section>
             )}
+          </>
+        )}
 
-            <section className="grid gap-4 lg:grid-cols-2">
-              <TransactionForm mode="income" onSubmit={handleIncome} loading={loading} />
-              <TransactionForm mode="expense" onSubmit={handleExpense} loading={loading} />
-            </section>
-
-            <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="font-medium">Low balance threshold</p>
-                <input
-                  type="number"
-                  min="0"
-                  value={threshold}
-                  onChange={(e) => setThreshold(Number(e.target.value || 0))}
-                  className="w-36 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
-                />
-              </div>
-              {lowBalance && (
-                <p className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-2 text-rose-200">
-                  ⚠️ Warning: balance is below your threshold. Spend only in emergency condition.
-                </p>
-              )}
-            </section>
-
-            <section className="grid gap-4 lg:grid-cols-2">
-              <BudgetPanel summary={summary} />
-              <TodaySnapshot stats={todayStats} />
-            </section>
-
-            <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
-
+        {activePage === "goals" && (
+          <>
             <GoalTracker
               goals={goals}
               avgDailySavings={avgDailySavings}
@@ -584,28 +549,30 @@ export default function App() {
               onAddProgress={handleAddGoalProgress}
               loading={loading}
             />
-
-            <section className="grid gap-4 lg:grid-cols-2">
-              <SpendingTips tips={tips} />
-              <DailyPatternChart rows={patternsData} />
-            </section>
-
+            <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
             <MLForecastChart
               historical={forecastData.historical}
               forecast={forecastData.forecast}
               trend={forecastData.trend}
             />
+          </>
+        )}
 
+        {activePage === "analytics" && (
+          <>
+            <section className="grid gap-4 lg:grid-cols-2">
+              <SpendingTips tips={tips} />
+              <DailyPatternChart rows={patternsData} />
+            </section>
             <TrendChart data={trendData} />
-
             <section className="grid gap-4 lg:grid-cols-2">
               <CategoryChart data={categoryData} />
               <TransactionsList transactions={transactions} />
             </section>
           </>
-        ) : (
-          <InsightsPage weekly={weeklyAnalysis} monthly={monthlyAnalysis} />
         )}
+
+        {activePage === "insights" && <InsightsPage weekly={weeklyAnalysis} monthly={monthlyAnalysis} />}
       </main>
     </>
   );

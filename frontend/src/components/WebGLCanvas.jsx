@@ -15,6 +15,7 @@ export default function WebGLCanvas({
   balance = 0,
   hasUnpaidLoans = false,
   paybackReady = false,
+  sceneMode = "dashboard",
 }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
@@ -250,6 +251,7 @@ export default function WebGLCanvas({
     stateRef.current.balance = balance;
     stateRef.current.hasUnpaidLoans = hasUnpaidLoans;
     stateRef.current.paybackReady = paybackReady;
+    stateRef.current.sceneMode = sceneMode;
 
     // ── Animation loop ───────────────────────────────────────────────────────
     let animId;
@@ -265,13 +267,18 @@ export default function WebGLCanvas({
       const chaos = chaosScale(h);
       const col = healthColor(h);
       const mix = financeMix();
+      const mode = stateRef.current.sceneMode ?? "dashboard";
 
       // Mouse 3D position (projected to z=0 plane)
       mouse3D.set(mouse.nx * 24, mouse.ny * 16, 0);
 
       // Parallax camera drift
-      camera.position.x += (mouse.nx * 2.5 - camera.position.x) * 0.03;
-      camera.position.y += (mouse.ny * 1.5 - camera.position.y) * 0.03;
+      const modeDrift = mode === "analytics" ? 1.25 : mode === "loans" ? 0.9 : 1;
+      camera.position.x += (mouse.nx * 2.5 * modeDrift - camera.position.x) * 0.03;
+      camera.position.y += (mouse.ny * 1.5 * modeDrift - camera.position.y) * 0.03;
+      if (mode === "goals") {
+        camera.position.y += Math.sin(frame * 0.006) * 0.004;
+      }
       camera.lookAt(scene.position);
 
       // Update particles
@@ -293,7 +300,8 @@ export default function WebGLCanvas({
         u.vy *= 0.985;
 
         // Move
-        const speed = chaos;
+        const speedBoost = mode === "analytics" ? 1.15 : mode === "loans" ? 1.05 : mode === "goals" ? 0.92 : 1;
+        const speed = chaos * speedBoost;
         p.position.x += u.vx * speed;
         p.position.y += u.vy * speed;
         p.position.z += u.vz;
@@ -397,6 +405,7 @@ export default function WebGLCanvas({
           }
         }
       }
+      lineMat.material.opacity = mode === "analytics" ? 0.3 : mode === "goals" ? 0.16 : 0.22;
       lineGeo.attributes.position.needsUpdate = true;
       lineGeo.attributes.color.needsUpdate = true;
       lineGeo.setDrawRange(0, connCount * 2);
@@ -438,7 +447,8 @@ export default function WebGLCanvas({
     stateRef.current.balance = balance;
     stateRef.current.hasUnpaidLoans = hasUnpaidLoans;
     stateRef.current.paybackReady = paybackReady;
-  }, [totalIncome, totalExpense, balance, hasUnpaidLoans, paybackReady]);
+    stateRef.current.sceneMode = sceneMode;
+  }, [totalIncome, totalExpense, balance, hasUnpaidLoans, paybackReady, sceneMode]);
 
   return (
     <div
