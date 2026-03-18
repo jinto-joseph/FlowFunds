@@ -24,6 +24,25 @@ import TodayLedger from "./components/TodayLedger";
 
 const DEFAULT_SUMMARY = { balance: 0, total_income: 0, total_expense: 0 };
 
+function getSafeStoredThreshold() {
+  try {
+    const raw = localStorage.getItem("flowfunds-threshold");
+    const parsed = Number(raw || 500);
+    return Number.isFinite(parsed) ? parsed : 500;
+  } catch {
+    return 500;
+  }
+}
+
+function getNotificationPermissionSafe() {
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+    return Notification.permission;
+  } catch {
+    return "unsupported";
+  }
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -61,13 +80,11 @@ export default function App() {
   const [activePage, setActivePage] = useState("dashboard");
   const [showPaybackPrompt, setShowPaybackPrompt] = useState(false);
 
-  const [threshold, setThreshold] = useState(() => Number(localStorage.getItem("flowfunds-threshold") || 500));
+  const [threshold, setThreshold] = useState(getSafeStoredThreshold);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
-  const [notificationPermission, setNotificationPermission] = useState(
-    "Notification" in window ? Notification.permission : "unsupported"
-  );
+  const [notificationPermission, setNotificationPermission] = useState(getNotificationPermissionSafe);
   const [pushStatus, setPushStatus] = useState("Push not enabled");
 
   const lowBalance = useMemo(() => summary.balance < threshold, [summary.balance, threshold]);
@@ -155,7 +172,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("flowfunds-threshold", String(threshold));
+    try {
+      localStorage.setItem("flowfunds-threshold", String(threshold));
+    } catch {
+      // Ignore storage failures on restricted/private mobile browsers.
+    }
   }, [threshold]);
 
   useEffect(() => {
@@ -170,26 +191,37 @@ export default function App() {
 
   useEffect(() => {
     if (!lowBalance || notificationPermission !== "granted") return;
-
-    new Notification("FlowFunds: Low balance", {
-      body: `⚠️ Balance is low (₹${summary.balance.toFixed(2)}). Spend only for emergency needs.`
-    });
+    try {
+      new Notification("FlowFunds: Low balance", {
+        body: `⚠️ Balance is low (₹${summary.balance.toFixed(2)}). Spend only for emergency needs.`
+      });
+    } catch {
+      // Notification may fail on mobile browsers with partial support.
+    }
   }, [lowBalance, notificationPermission, summary.balance]);
 
   useEffect(() => {
     if (!debtMode || notificationPermission !== "granted") return;
-    new Notification("FlowFunds: Payback pending", {
-      body: hasUnpaidLoans
-        ? `You still need to return ₹${outstandingLoanTotal.toFixed(2)}. Mark as paid once done.`
-        : "Your balance is negative. You likely borrowed money. Repay as soon as possible.",
-    });
+    try {
+      new Notification("FlowFunds: Payback pending", {
+        body: hasUnpaidLoans
+          ? `You still need to return ₹${outstandingLoanTotal.toFixed(2)}. Mark as paid once done.`
+          : "Your balance is negative. You likely borrowed money. Repay as soon as possible.",
+      });
+    } catch {
+      // Notification may fail on mobile browsers with partial support.
+    }
   }, [debtMode, hasUnpaidLoans, notificationPermission, outstandingLoanTotal]);
 
   useEffect(() => {
     if (!canPaybackNow || notificationPermission !== "granted") return;
-    new Notification("FlowFunds: Ready to repay loans", {
-      body: `You now have enough balance to pay back ₹${outstandingLoanTotal.toFixed(2)}. Open payback checklist.`,
-    });
+    try {
+      new Notification("FlowFunds: Ready to repay loans", {
+        body: `You now have enough balance to pay back ₹${outstandingLoanTotal.toFixed(2)}. Open payback checklist.`,
+      });
+    } catch {
+      // Notification may fail on mobile browsers with partial support.
+    }
   }, [canPaybackNow, notificationPermission, outstandingLoanTotal]);
 
   async function installApp() {
@@ -200,9 +232,19 @@ export default function App() {
   }
 
   async function enableNotifications() {
-    if (!("Notification" in window)) return;
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
+    try {
+      if (!("Notification" in window)) {
+        setNotificationPermission("unsupported");
+        setPushStatus("Notifications unsupported on this browser");
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      setPushStatus(permission === "granted" ? "Notifications enabled" : "Notification permission not granted");
+    } catch {
+      setNotificationPermission("unsupported");
+      setPushStatus("Could not enable notifications on this browser");
+    }
   }
 
   async function enablePushAlerts() {
