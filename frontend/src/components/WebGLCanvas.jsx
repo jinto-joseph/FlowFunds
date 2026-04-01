@@ -27,9 +27,17 @@ export default function WebGLCanvas({
       setFallbackMode(true);
       return undefined;
     }
+    setFallbackMode(false);
 
     const mount = mountRef.current;
     if (!mount) return;
+
+    const probe = document.createElement("canvas");
+    const supportsWebGL = Boolean(probe.getContext("webgl2") || probe.getContext("webgl") || probe.getContext("experimental-webgl"));
+    if (!supportsWebGL) {
+      setFallbackMode(true);
+      return;
+    }
 
     let W = window.innerWidth;
     let H = window.innerHeight;
@@ -50,10 +58,22 @@ export default function WebGLCanvas({
       setFallbackMode(true);
       return;
     }
+    const gl = renderer.getContext?.();
+    if (!gl || gl.isContextLost?.()) {
+      renderer.dispose();
+      setFallbackMode(true);
+      return;
+    }
     renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPowerMode ? 1 : 2));
     renderer.setClearColor(0x000000, 0);
     mount.appendChild(renderer.domElement);
+
+    const onContextLost = (event) => {
+      event.preventDefault();
+      setFallbackMode(true);
+    };
+    renderer.domElement.addEventListener("webglcontextlost", onContextLost, false);
 
     // ── Textures ─────────────────────────────────────────────────────────────
     function makeGlowTexture() {
@@ -465,6 +485,7 @@ export default function WebGLCanvas({
       Object.values(symbolTextures).forEach((t) => t.dispose());
       if (lineGeo) lineGeo.dispose();
       if (lineMat) lineMat.material.dispose();
+      renderer.domElement.removeEventListener("webglcontextlost", onContextLost, false);
       if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
     };
   }, [forceFallback]);

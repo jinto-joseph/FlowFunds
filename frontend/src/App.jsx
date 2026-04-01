@@ -56,15 +56,6 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-function isProbablyMobileDevice() {
-  try {
-    if (typeof navigator === "undefined") return false;
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || "");
-  } catch {
-    return false;
-  }
-}
-
 export default function App() {
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState([]);
@@ -95,7 +86,6 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermissionSafe);
   const [pushStatus, setPushStatus] = useState("Push not enabled");
-  const isMobile = useMemo(() => isProbablyMobileDevice(), []);
 
   const lowBalance = useMemo(() => summary.balance < threshold, [summary.balance, threshold]);
   const hasUnpaidLoans = useMemo(() => loans.some((l) => !l.is_paid), [loans]);
@@ -417,7 +407,6 @@ export default function App() {
         />
       )}
       <WebGLCanvas
-        forceFallback={isMobile}
         balanceHealth={balanceHealth}
         totalIncome={summary.total_income}
         totalExpense={summary.total_expense}
