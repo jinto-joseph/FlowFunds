@@ -8,7 +8,7 @@ export default function FinancialCoach({ health, onOpenPayback }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-white">AI Financial Coach</h3>
-          <p className="text-xs text-slate-400">7-day guidance based on your income, expenses, and loans</p>
+          <p className="text-sm text-slate-300">7-day guidance based on your income, expenses, and loans</p>
         </div>
         <div className={`rounded-full px-3 py-1 text-sm font-semibold ${
           tone === "emerald"
@@ -28,7 +28,7 @@ export default function FinancialCoach({ health, onOpenPayback }) {
         <Metric label="Burn Rate" value={burnRate == null ? "N/A" : `${burnRate.toFixed(1)}%`} tone="rose" />
       </div>
 
-      <p className="mt-3 text-xs text-slate-400">
+      <p className="mt-3 text-sm text-slate-300">
         Model logic: projected 7-day = current balance + expected irregular income events - daily expense trend.
         Expected income events: {Number(health?.expected_income_events_7d ?? 0)} in next 7 days.
       </p>
@@ -68,7 +68,7 @@ function Metric({ label, value, tone }) {
 
   return (
     <article className={`rounded-lg border p-3 ${tones[tone]}`}>
-      <p className="text-xs opacity-80">{label}</p>
+      <p className="text-sm opacity-80">{label}</p>
       <p className="mt-1 text-lg font-semibold">{value}</p>
     </article>
   );

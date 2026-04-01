@@ -28,9 +28,9 @@ function Card({ title, value, tone }) {
   }[tone];
 
   return (
-    <article className={`rounded-xl border p-4 backdrop-blur-sm ${toneClass}`}>
-      <p className="text-xs uppercase tracking-wide text-slate-300">{title}</p>
-      <p className="mt-1 text-2xl font-semibold text-white tabular-nums">{value}</p>
+    <article className={`rounded-xl border p-4 backdrop-blur-sm sm:p-5 ${toneClass}`}>
+      <p className="text-sm uppercase tracking-wide text-slate-300">{title}</p>
+      <p className="mt-1 text-[1.7rem] font-semibold text-white tabular-nums sm:text-2xl">{value}</p>
     </article>
   );
 }

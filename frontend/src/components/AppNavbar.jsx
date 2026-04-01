@@ -9,13 +9,13 @@ const NAV_ITEMS = [
 export default function AppNavbar({ activePage, onChange }) {
   return (
     <nav className="sticky top-3 z-30 rounded-xl border border-slate-700/60 bg-slate-950/80 p-2 backdrop-blur-md">
-      <ul className="flex flex-wrap gap-2">
+      <ul className="flex gap-2 overflow-x-auto pb-1">
         {NAV_ITEMS.map((item) => (
-          <li key={item.id}>
+          <li key={item.id} className="shrink-0">
             <button
               type="button"
               onClick={() => onChange(item.id)}
-              className={`rounded-lg px-3 py-2 text-sm transition ${
+              className={`rounded-lg px-3 py-2.5 text-sm transition ${
                 activePage === item.id
                   ? "bg-cyan-500/20 text-cyan-200 border border-cyan-500/40"
                   : "bg-slate-900/80 text-slate-300 border border-slate-700 hover:border-slate-500"

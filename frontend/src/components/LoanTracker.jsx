@@ -39,9 +39,9 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
       <div className="mb-3 flex items-center justify-between gap-4">
         <h3 className="text-lg font-semibold text-white">Borrowed / Payback Tracker</h3>
         <div className="text-right">
-          <p className="text-xs text-slate-400">Outstanding</p>
+          <p className="text-sm text-slate-300">Outstanding</p>
           <p className="text-xl font-bold text-amber-300">₹{Number(outstandingTotal).toFixed(2)}</p>
-          <p className="text-xs text-slate-500">{unpaidCount} unpaid</p>
+          <p className="text-sm text-slate-400">{unpaidCount} unpaid</p>
         </div>
       </div>
 
@@ -125,19 +125,19 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
                     ₹{Number(loan.amount).toFixed(2)}
                   </span>
                 </p>
-                <p className="text-xs text-slate-400">{loan.note || "No note"}</p>
+                <p className="text-sm text-slate-300">{loan.note || "No note"}</p>
                 {loan.borrowed_date && (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-sm text-slate-400">
                     Borrowed: {new Date(loan.borrowed_date).toLocaleDateString("en-IN")}
                   </p>
                 )}
                 {loan.due_date && (
-                  <p className="text-xs text-amber-500/80">
+                  <p className="text-sm text-amber-400/90">
                     Due: {new Date(loan.due_date).toLocaleDateString("en-IN")}
                   </p>
                 )}
                 {loan.is_paid && loan.paid_date && (
-                  <p className="text-xs text-emerald-500/70">
+                  <p className="text-sm text-emerald-400/90">
                     Paid: {new Date(loan.paid_date).toLocaleDateString("en-IN")}
                   </p>
                 )}

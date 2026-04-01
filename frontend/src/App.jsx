@@ -478,16 +478,16 @@ export default function App() {
         paybackReady={canPaybackNow}
         sceneMode={activePage}
       />
-      <main className="relative z-10 mx-auto min-h-screen max-w-6xl space-y-5 px-4 py-6 text-slate-100">
-        <header className="space-y-1 rounded-xl border border-slate-700/50 bg-slate-950/70 p-4 backdrop-blur-sm">
-          <h1 className="text-3xl font-bold">FlowFunds</h1>
-          <p className="text-slate-400">Smart student expense tracker for irregular income.</p>
-          <div className="pt-2 flex flex-wrap gap-2">
+      <main className="relative z-10 mx-auto min-h-screen max-w-6xl space-y-6 px-3 py-5 text-slate-100 sm:space-y-5 sm:px-4 sm:py-6">
+        <header className="space-y-2 rounded-xl border border-slate-700/50 bg-slate-950/70 p-4 backdrop-blur-sm sm:p-5">
+          <h1 className="text-2xl font-bold sm:text-3xl">FlowFunds</h1>
+          <p className="text-sm text-slate-300 sm:text-base">Smart student expense tracker for irregular income.</p>
+          <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:flex-wrap">
             <button
               type="button"
               onClick={installApp}
               disabled={!deferredInstallPrompt}
-              className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-1 text-sm text-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {deferredInstallPrompt ? "Install App" : "Installed / Not available"}
             </button>
@@ -495,7 +495,7 @@ export default function App() {
               type="button"
               onClick={enableNotifications}
               disabled={notificationPermission === "granted" || notificationPermission === "denied"}
-              className="rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-3 py-1 text-sm text-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {notificationPermission === "granted"
                 ? "Notifications enabled"
@@ -506,19 +506,19 @@ export default function App() {
             <button
               type="button"
               onClick={enablePushAlerts}
-              className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-sm text-emerald-200"
+              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 sm:w-auto"
             >
               Enable push alerts
             </button>
             <button
               type="button"
               onClick={sendTestPush}
-              className="rounded-lg border border-violet-500/50 bg-violet-500/10 px-3 py-1 text-sm text-violet-200"
+              className="w-full rounded-lg border border-violet-500/50 bg-violet-500/10 px-3 py-2 text-sm text-violet-200 sm:w-auto"
             >
               Send test push
             </button>
           </div>
-          <p className="pt-2 text-xs text-slate-400">{pushStatus}</p>
+          <p className="pt-2 text-sm text-slate-300">{pushStatus}</p>
         </header>
 
         <AppNavbar activePage={activePage} onChange={setActivePage} />

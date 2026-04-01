@@ -28,9 +28,9 @@ export default function GoalTracker({ goals = [], avgDailySavings = 0, onAddGoal
 
   return (
     <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-white">Savings Goals + ETA</h3>
-        <p className="text-xs text-slate-400">Avg daily savings: ₹{Number(avgDailySavings).toFixed(2)}</p>
+        <p className="text-sm text-slate-300">Avg daily savings: ₹{Number(avgDailySavings).toFixed(2)}</p>
       </div>
 
       <form onSubmit={submit} className="grid gap-2 md:grid-cols-5">
@@ -49,21 +49,21 @@ export default function GoalTracker({ goals = [], avgDailySavings = 0, onAddGoal
           <li key={goal.id} className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-white">{goal.title}</p>
-              <p className="text-xs text-slate-400">{goal.progress.toFixed(1)}%</p>
+              <p className="text-sm text-slate-300">{goal.progress.toFixed(1)}%</p>
             </div>
             <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-800">
               <div className="h-full rounded-full bg-violet-400" style={{ width: `${Math.min(100, Number(goal.progress || 0))}%` }} />
             </div>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-sm text-slate-300">
               ₹{Number(goal.current_amount).toFixed(2)} / ₹{Number(goal.target_amount).toFixed(2)} · Remaining ₹{Number(goal.remaining_amount).toFixed(2)}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-sm text-slate-400">
               {goal.eta_days == null ? "ETA unavailable (save more consistently)" : `Predicted ETA: ${goal.eta_days} days (${goal.projected_date})`}
             </p>
-            <div className="mt-2 flex gap-2">
-              <button type="button" onClick={() => onAddProgress(goal.id, 100)} className="rounded-md border border-violet-500/50 bg-violet-500/10 px-2 py-1 text-xs text-violet-200">+₹100</button>
-              <button type="button" onClick={() => onAddProgress(goal.id, 500)} className="rounded-md border border-violet-500/50 bg-violet-500/10 px-2 py-1 text-xs text-violet-200">+₹500</button>
-              <button type="button" onClick={() => onAddProgress(goal.id, 1000)} className="rounded-md border border-violet-500/50 bg-violet-500/10 px-2 py-1 text-xs text-violet-200">+₹1000</button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={() => onAddProgress(goal.id, 100)} className="rounded-md border border-violet-500/50 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200">+₹100</button>
+              <button type="button" onClick={() => onAddProgress(goal.id, 500)} className="rounded-md border border-violet-500/50 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200">+₹500</button>
+              <button type="button" onClick={() => onAddProgress(goal.id, 1000)} className="rounded-md border border-violet-500/50 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200">+₹1000</button>
             </div>
           </li>
         ))}

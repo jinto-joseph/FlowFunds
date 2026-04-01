@@ -9,7 +9,7 @@ export default function TodayLedger({ ledger }) {
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-white">Today Income vs Expense</h3>
-          <p className="text-xs text-slate-400">Daily basis summary with today's transactions</p>
+          <p className="text-sm text-slate-300">Daily basis summary with today's transactions</p>
         </div>
       </div>
 
@@ -22,10 +22,10 @@ export default function TodayLedger({ ledger }) {
       <ul className="mt-3 space-y-2">
         {rows.length === 0 && <li className="text-sm text-slate-400">No transactions recorded today.</li>}
         {rows.slice(0, 8).map((tx) => (
-          <li key={tx.id} className="flex items-center justify-between rounded-lg bg-slate-950 px-3 py-2">
+          <li key={tx.id} className="flex flex-col items-start justify-between gap-1 rounded-lg bg-slate-950 px-3 py-2 sm:flex-row sm:items-center">
             <div>
               <p className="text-sm text-white">{tx.kind === "income" ? tx.source || "Income" : tx.category || "Expense"}</p>
-              <p className="text-xs text-slate-400">{new Date(tx.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+              <p className="text-sm text-slate-300">{new Date(tx.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
             </div>
             <p className={`font-semibold ${tx.kind === "income" ? "text-emerald-400" : "text-rose-400"}`}>
               {tx.kind === "income" ? "+" : "-"}₹{Number(tx.amount).toFixed(2)}
@@ -47,7 +47,7 @@ function Mini({ title, value, tone }) {
 
   return (
     <article className={`rounded-lg border p-3 ${tones[tone]}`}>
-      <p className="text-xs opacity-80">{title}</p>
+      <p className="text-sm opacity-80">{title}</p>
       <p className="mt-1 text-lg font-semibold">{value}</p>
     </article>
   );

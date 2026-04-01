@@ -19,9 +19,9 @@ export default function RecurringBills({ bills = [], reminders = [], onAddBill, 
 
   return (
     <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-white">Recurring Bills + Reminders</h3>
-        <p className="text-xs text-slate-400">{reminders.length} due in 7 days</p>
+        <p className="text-sm text-slate-300">{reminders.length} due in 7 days</p>
       </div>
 
       <form onSubmit={submit} className="grid gap-2 md:grid-cols-5">
@@ -45,14 +45,14 @@ export default function RecurringBills({ bills = [], reminders = [], onAddBill, 
               <p className="text-sm text-white">
                 {bill.name} · <span className="text-cyan-300">₹{Number(bill.amount).toFixed(2)}</span> · {bill.frequency}
               </p>
-              <span className={`rounded-full px-2 py-0.5 text-xs ${bill.due_soon ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-300"}`}>
+              <span className={`rounded-full px-2.5 py-1 text-sm ${bill.due_soon ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-300"}`}>
                 due in {bill.days_left}d
               </span>
             </div>
-            <p className="mt-1 text-xs text-slate-400">Next due: {bill.next_due_date} {bill.note ? `· ${bill.note}` : ""}</p>
-            <div className="mt-2 flex gap-2">
-              <button type="button" onClick={() => onMarkPaid(bill.id)} className="rounded-md border border-emerald-500/50 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-200">Mark Paid</button>
-              <button type="button" onClick={() => onToggleActive(bill.id, !bill.is_active)} className="rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-xs text-slate-300">
+            <p className="mt-1 text-sm text-slate-300">Next due: {bill.next_due_date} {bill.note ? `· ${bill.note}` : ""}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={() => onMarkPaid(bill.id)} className="rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-200">Mark Paid</button>
+              <button type="button" onClick={() => onToggleActive(bill.id, !bill.is_active)} className="rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm text-slate-300">
                 {bill.is_active ? "Pause" : "Resume"}
               </button>
             </div>
