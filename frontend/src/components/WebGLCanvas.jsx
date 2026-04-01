@@ -9,6 +9,7 @@ import * as THREE from "three";
  *  - Mouse/touch parallax and repulsion for interactivity
  */
 export default function WebGLCanvas({
+  forceFallback = false,
   balanceHealth = 1,
   totalIncome = 0,
   totalExpense = 0,
@@ -22,6 +23,11 @@ export default function WebGLCanvas({
   const [fallbackMode, setFallbackMode] = useState(false);
 
   useEffect(() => {
+    if (forceFallback) {
+      setFallbackMode(true);
+      return undefined;
+    }
+
     const mount = mountRef.current;
     if (!mount) return;
 
@@ -461,7 +467,7 @@ export default function WebGLCanvas({
       if (lineMat) lineMat.material.dispose();
       if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [forceFallback]);
 
   // Live-update refs (no scene rebuild)
   useEffect(() => {

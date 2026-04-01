@@ -261,6 +261,10 @@ export default function App() {
 
   async function enableNotifications() {
     try {
+      if (isMobile) {
+        setPushStatus("For stability, in-app notification toggle is disabled on mobile. Use desktop for setup.");
+        return;
+      }
       if (!("Notification" in window)) {
         setNotificationPermission("unsupported");
         setPushStatus("Notifications unsupported on this browser");
@@ -277,6 +281,10 @@ export default function App() {
 
   async function enablePushAlerts() {
     try {
+      if (isMobile) {
+        setPushStatus("Push setup is disabled on mobile to prevent browser crashes. Use desktop to enable push.");
+        return;
+      }
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
         setPushStatus("Push unsupported on this device/browser");
         return;
@@ -470,6 +478,7 @@ export default function App() {
         />
       )}
       <WebGLCanvas
+        forceFallback={isMobile}
         balanceHealth={balanceHealth}
         totalIncome={summary.total_income}
         totalExpense={summary.total_expense}
