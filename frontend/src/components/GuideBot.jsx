@@ -355,8 +355,8 @@ export default function GuideBot({ activePage, onNavigate }) {
   const isDocked = dockSide === "left" || dockSide === "right";
   const buttonClasses = isDocked
     ? dockSide === "left"
-      ? "w-10 rounded-r-xl rounded-l-md border border-cyan-300/45 bg-cyan-500/5 px-2 py-3 text-xs font-semibold text-cyan-100 shadow-lg backdrop-blur-sm"
-      : "w-10 rounded-l-xl rounded-r-md border border-cyan-300/45 bg-cyan-500/5 px-2 py-3 text-xs font-semibold text-cyan-100 shadow-lg backdrop-blur-sm"
+      ? "h-20 w-6 rounded-r-xl border border-cyan-300/45 bg-cyan-500/8 px-0 py-0 text-base font-bold text-cyan-100 shadow-lg backdrop-blur-sm"
+      : "h-20 w-6 rounded-l-xl border border-cyan-300/45 bg-cyan-500/8 px-0 py-0 text-base font-bold text-cyan-100 shadow-lg backdrop-blur-sm"
     : "rounded-full border border-cyan-300/45 bg-cyan-500/5 px-4 py-3 text-sm font-semibold text-cyan-100 shadow-lg backdrop-blur-sm";
   const panelPositionClass = dockSide === "left" ? "bottom-14 left-0" : "bottom-14 right-0";
 
@@ -375,11 +375,11 @@ export default function GuideBot({ activePage, onNavigate }) {
         className={buttonClasses}
         style={{
           touchAction: "none",
-          writingMode: isDocked ? "vertical-rl" : "horizontal-tb",
-          textOrientation: isDocked ? "mixed" : "initial",
+          writingMode: "horizontal-tb",
+          textOrientation: "initial",
         }}
       >
-        {isDocked ? "Guide" : open ? "Close Guide" : "Guide Bot"}
+        {isDocked ? (dockSide === "left" ? "›" : "‹") : open ? "Close Guide" : "Guide Bot"}
       </button>
 
       {open && (
