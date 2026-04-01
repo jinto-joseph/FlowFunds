@@ -21,6 +21,7 @@ import RecurringBills from "./components/RecurringBills";
 import GoalTracker from "./components/GoalTracker";
 import AppNavbar from "./components/AppNavbar";
 import TodayLedger from "./components/TodayLedger";
+import GuideBot from "./components/GuideBot";
 
 const DEFAULT_SUMMARY = { balance: 0, total_income: 0, total_expense: 0 };
 
@@ -419,7 +420,7 @@ export default function App() {
         <header className="space-y-2 rounded-xl border border-slate-700/50 bg-slate-950/70 p-4 backdrop-blur-sm sm:p-5">
           <h1 className="text-2xl font-bold sm:text-3xl">FlowFunds</h1>
           <p className="text-sm text-slate-300 sm:text-base">Smart student expense tracker for irregular income.</p>
-          <div className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:flex-wrap">
+          <div id="guide-notification-actions" className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:flex-wrap">
             <button
               type="button"
               onClick={installApp}
@@ -458,18 +459,24 @@ export default function App() {
           <p className="pt-2 text-sm text-slate-300">{pushStatus}</p>
         </header>
 
-        <AppNavbar activePage={activePage} onChange={setActivePage} />
+        <div id="guide-navbar">
+          <AppNavbar activePage={activePage} onChange={setActivePage} />
+        </div>
 
         {error && <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-200">{error}</p>}
 
         {activePage === "dashboard" && (
           <>
-            <SummaryCards summary={summary} prediction={prediction} />
+            <div id="guide-summary-cards">
+              <SummaryCards summary={summary} prediction={prediction} />
+            </div>
             <EmergencyAlert balance={summary.balance} threshold={threshold} survivalDays={prediction.days_left} />
-            <section className="grid gap-4 lg:grid-cols-2">
-              <TransactionForm mode="income" onSubmit={handleIncome} loading={loading} />
-              <TransactionForm mode="expense" onSubmit={handleExpense} loading={loading} />
-            </section>
+            <div id="guide-transaction-forms">
+              <section className="grid gap-4 lg:grid-cols-2">
+                <TransactionForm mode="income" onSubmit={handleIncome} loading={loading} />
+                <TransactionForm mode="expense" onSubmit={handleExpense} loading={loading} />
+              </section>
+            </div>
             <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-3">
                 <p className="font-medium">Low balance threshold</p>
@@ -492,7 +499,9 @@ export default function App() {
               <TodaySnapshot stats={todayStats} />
             </section>
 
-            <TodayLedger ledger={todayLedger} />
+            <div id="guide-today-ledger">
+              <TodayLedger ledger={todayLedger} />
+            </div>
             <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
           </>
         )}
@@ -540,14 +549,16 @@ export default function App() {
                 </div>
               </div>
             )}
-            <LoanTracker
-              loans={loans}
-              outstandingTotal={outstandingLoanTotal}
-              balance={summary.balance}
-              onAddLoan={handleAddLoan}
-              onTogglePaid={handleToggleLoanPaid}
-              loading={loading}
-            />
+            <div id="guide-loan-tracker">
+              <LoanTracker
+                loans={loans}
+                outstandingTotal={outstandingLoanTotal}
+                balance={summary.balance}
+                onAddLoan={handleAddLoan}
+                onTogglePaid={handleToggleLoanPaid}
+                loading={loading}
+              />
+            </div>
             <section className="grid gap-4 lg:grid-cols-2">
               <AutoPaybackPlan plan={paybackPlan} onOpenPayback={() => setShowPaybackPrompt(true)} />
               <RecurringBills
@@ -572,13 +583,15 @@ export default function App() {
 
         {activePage === "goals" && (
           <>
-            <GoalTracker
-              goals={goals}
-              avgDailySavings={avgDailySavings}
-              onAddGoal={handleAddGoal}
-              onAddProgress={handleAddGoalProgress}
-              loading={loading}
-            />
+            <div id="guide-goal-tracker">
+              <GoalTracker
+                goals={goals}
+                avgDailySavings={avgDailySavings}
+                onAddGoal={handleAddGoal}
+                onAddProgress={handleAddGoalProgress}
+                loading={loading}
+              />
+            </div>
             <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
             <MLForecastChart
               historical={forecastData.historical}
@@ -597,17 +610,24 @@ export default function App() {
             <TrendChart data={trendData} />
             <section className="grid gap-4 lg:grid-cols-2">
               <CategoryChart data={categoryData} />
-              <TransactionsList
-                transactions={transactions}
-                onUpdateTransaction={handleUpdateTransaction}
-                loading={loading}
-              />
+              <div id="guide-transactions-list">
+                <TransactionsList
+                  transactions={transactions}
+                  onUpdateTransaction={handleUpdateTransaction}
+                  loading={loading}
+                />
+              </div>
             </section>
           </>
         )}
 
-        {activePage === "insights" && <InsightsPage weekly={weeklyAnalysis} monthly={monthlyAnalysis} />}
+        {activePage === "insights" && (
+          <div id="guide-insights-page">
+            <InsightsPage weekly={weeklyAnalysis} monthly={monthlyAnalysis} />
+          </div>
+        )}
       </main>
+      <GuideBot activePage={activePage} onNavigate={setActivePage} />
     </>
   );
 }
