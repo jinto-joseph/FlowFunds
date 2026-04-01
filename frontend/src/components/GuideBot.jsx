@@ -345,16 +345,16 @@ export default function GuideBot({ activePage, onNavigate }) {
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onClick={toggleGuide}
-        className="rounded-full border border-cyan-300/55 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-100 shadow-lg backdrop-blur-md"
+        className="rounded-full border border-cyan-300/45 bg-cyan-500/5 px-4 py-3 text-sm font-semibold text-cyan-100 shadow-lg backdrop-blur-sm"
         style={{ touchAction: "none" }}
       >
         {open ? "Close Guide" : "Guide Bot"}
       </button>
 
       {open && (
-        <aside className="absolute left-0 top-14 w-[min(92vw,24rem)] rounded-xl border border-slate-500/55 bg-slate-950/58 p-4 text-slate-100 shadow-2xl backdrop-blur-md">
+        <aside className="absolute left-0 top-14 w-[min(92vw,24rem)] rounded-xl border border-slate-300/30 bg-slate-950/35 p-4 text-slate-100 shadow-xl backdrop-blur-[2px]">
           <div
-            className="mb-2 flex items-center justify-between rounded-lg border border-slate-600/60 bg-slate-900/45 px-2 py-1 text-xs text-slate-300"
+            className="mb-2 flex items-center justify-between rounded-lg border border-slate-400/35 bg-slate-900/25 px-2 py-1 text-xs text-slate-200"
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             style={{ touchAction: "none", cursor: "move" }}
@@ -367,7 +367,7 @@ export default function GuideBot({ activePage, onNavigate }) {
           </p>
           <h3 className="mt-1 text-lg font-semibold">{step.title}</h3>
           <p className="mt-2 text-sm text-slate-300">{step.description}</p>
-          <p className="mt-2 rounded-lg border border-slate-700 bg-slate-900/70 p-2 text-sm text-slate-200">
+          <p className="mt-2 rounded-lg border border-slate-400/35 bg-slate-900/30 p-2 text-sm text-slate-100">
             {step.example}
           </p>
           <p className="mt-2 text-xs text-slate-400">
