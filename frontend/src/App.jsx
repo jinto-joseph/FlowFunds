@@ -65,6 +65,20 @@ function isProbablyMobileDevice() {
   }
 }
 
+function shouldBlockNotificationSetup() {
+  try {
+    if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    const mobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
+    const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+    const standaloneMode = window.matchMedia?.("(display-mode: standalone)")?.matches ?? false;
+    const touchOnly = (navigator.maxTouchPoints ?? 0) > 0 && coarsePointer;
+    return mobileUa || touchOnly || standaloneMode;
+  } catch {
+    return true;
+  }
+}
+
 export default function App() {
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState([]);
@@ -96,6 +110,7 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermissionSafe);
   const [pushStatus, setPushStatus] = useState("Push not enabled");
   const isMobile = useMemo(() => isProbablyMobileDevice(), []);
+  const blockNotificationSetup = useMemo(() => shouldBlockNotificationSetup(), []);
 
   const lowBalance = useMemo(() => summary.balance < threshold, [summary.balance, threshold]);
   const hasUnpaidLoans = useMemo(() => loans.some((l) => !l.is_paid), [loans]);
@@ -200,7 +215,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!lowBalance || notificationPermission !== "granted" || isMobile) return;
+    if (!lowBalance || notificationPermission !== "granted" || blockNotificationSetup) return;
     if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
       const key = "flowfunds-notify-low-balance";
@@ -214,10 +229,10 @@ export default function App() {
     } catch {
       // Notification may fail on mobile browsers with partial support.
     }
-  }, [isMobile, lowBalance, notificationPermission, summary.balance]);
+  }, [blockNotificationSetup, lowBalance, notificationPermission, summary.balance]);
 
   useEffect(() => {
-    if (!debtMode || notificationPermission !== "granted" || isMobile) return;
+    if (!debtMode || notificationPermission !== "granted" || blockNotificationSetup) return;
     if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
       const key = "flowfunds-notify-debt";
@@ -233,10 +248,10 @@ export default function App() {
     } catch {
       // Notification may fail on mobile browsers with partial support.
     }
-  }, [debtMode, hasUnpaidLoans, isMobile, notificationPermission, outstandingLoanTotal]);
+  }, [blockNotificationSetup, debtMode, hasUnpaidLoans, notificationPermission, outstandingLoanTotal]);
 
   useEffect(() => {
-    if (!canPaybackNow || notificationPermission !== "granted" || isMobile) return;
+    if (!canPaybackNow || notificationPermission !== "granted" || blockNotificationSetup) return;
     if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
       const key = "flowfunds-notify-repay-ready";
@@ -250,7 +265,7 @@ export default function App() {
     } catch {
       // Notification may fail on mobile browsers with partial support.
     }
-  }, [canPaybackNow, isMobile, notificationPermission, outstandingLoanTotal]);
+  }, [blockNotificationSetup, canPaybackNow, notificationPermission, outstandingLoanTotal]);
 
   async function installApp() {
     if (!deferredInstallPrompt) return;
@@ -261,8 +276,8 @@ export default function App() {
 
   async function enableNotifications() {
     try {
-      if (isMobile) {
-        setPushStatus("For stability, in-app notification toggle is disabled on mobile. Use desktop for setup.");
+      if (blockNotificationSetup) {
+        setPushStatus("For stability, notification setup is disabled on mobile/PWA devices. Use desktop browser.");
         return;
       }
       if (!("Notification" in window)) {
@@ -281,8 +296,8 @@ export default function App() {
 
   async function enablePushAlerts() {
     try {
-      if (isMobile) {
-        setPushStatus("Push setup is disabled on mobile to prevent browser crashes. Use desktop to enable push.");
+      if (blockNotificationSetup) {
+        setPushStatus("Push setup is disabled on mobile/PWA devices to prevent crashes. Use desktop browser.");
         return;
       }
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
@@ -503,10 +518,12 @@ export default function App() {
             <button
               type="button"
               onClick={enableNotifications}
-              disabled={notificationPermission === "granted" || notificationPermission === "denied"}
+              disabled={blockNotificationSetup || notificationPermission === "granted" || notificationPermission === "denied"}
               className="w-full rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
-              {notificationPermission === "granted"
+              {blockNotificationSetup
+                ? "Notifications unavailable on phone"
+                : notificationPermission === "granted"
                 ? "Notifications enabled"
                 : notificationPermission === "denied"
                   ? "Notifications blocked"
@@ -515,9 +532,10 @@ export default function App() {
             <button
               type="button"
               onClick={enablePushAlerts}
-              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 sm:w-auto"
+              disabled={blockNotificationSetup}
+              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
-              Enable push alerts
+              {blockNotificationSetup ? "Push setup unavailable on phone" : "Enable push alerts"}
             </button>
             <button
               type="button"
