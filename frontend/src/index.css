@@ -49,3 +49,13 @@ body {
   outline: 2px solid rgba(34, 211, 238, 0.75);
   animation: guideFocus 1.1s ease-out 2;
 }
+
+body.guide-pick-mode [data-guide-key] {
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+body.guide-pick-mode [data-guide-key]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.45);
+}
