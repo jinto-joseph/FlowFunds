@@ -165,6 +165,7 @@ export default function GuideBot({ activePage, onNavigate }) {
   const [clickMode, setClickMode] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [positionReady, setPositionReady] = useState(false);
+  const [dockSide, setDockSide] = useState(null);
   const highlightedRef = useRef(null);
   const dragRef = useRef({
     dragging: false,
@@ -173,6 +174,8 @@ export default function GuideBot({ activePage, onNavigate }) {
     startY: 0,
     originX: 0,
     originY: 0,
+    lastX: 0,
+    lastY: 0,
   });
   const clickSuppressUntilRef = useRef(0);
 
@@ -189,6 +192,7 @@ export default function GuideBot({ activePage, onNavigate }) {
     const x = Math.max(10, window.innerWidth - 150);
     const y = Math.max(10, window.innerHeight - 72);
     setPosition({ x, y });
+    setDockSide("right");
     setPositionReady(true);
   }, [positionReady]);
 
@@ -215,6 +219,8 @@ export default function GuideBot({ activePage, onNavigate }) {
       }
 
       const next = clamp(dragRef.current.originX + dx, dragRef.current.originY + dy);
+      dragRef.current.lastX = next.x;
+      dragRef.current.lastY = next.y;
       setPosition(next);
       if ("touches" in event) {
         event.preventDefault();
@@ -225,6 +231,17 @@ export default function GuideBot({ activePage, onNavigate }) {
       if (!dragRef.current.dragging) return;
       dragRef.current.dragging = false;
       if (dragRef.current.moved) {
+        const maxX = Math.max(10, window.innerWidth - 44);
+        const currentX = dragRef.current.lastX;
+        if (currentX <= 18) {
+          setDockSide("left");
+          setPosition((prev) => ({ ...prev, x: 8 }));
+        } else if (currentX >= maxX - 18) {
+          setDockSide("right");
+          setPosition((prev) => ({ ...prev, x: maxX - 8 }));
+        } else {
+          setDockSide(null);
+        }
         clickSuppressUntilRef.current = Date.now() + 220;
       }
     }
@@ -315,6 +332,8 @@ export default function GuideBot({ activePage, onNavigate }) {
     dragRef.current.startY = clientY;
     dragRef.current.originX = position.x;
     dragRef.current.originY = position.y;
+    dragRef.current.lastX = position.x;
+    dragRef.current.lastY = position.y;
   }
 
   function handleMouseDown(event) {
@@ -333,6 +352,14 @@ export default function GuideBot({ activePage, onNavigate }) {
     setOpen((v) => !v);
   }
 
+  const isDocked = dockSide === "left" || dockSide === "right";
+  const buttonClasses = isDocked
+    ? dockSide === "left"
+      ? "w-10 rounded-r-xl rounded-l-md border border-cyan-300/45 bg-cyan-500/5 px-2 py-3 text-xs font-semibold text-cyan-100 shadow-lg backdrop-blur-sm"
+      : "w-10 rounded-l-xl rounded-r-md border border-cyan-300/45 bg-cyan-500/5 px-2 py-3 text-xs font-semibold text-cyan-100 shadow-lg backdrop-blur-sm"
+    : "rounded-full border border-cyan-300/45 bg-cyan-500/5 px-4 py-3 text-sm font-semibold text-cyan-100 shadow-lg backdrop-blur-sm";
+  const panelPositionClass = dockSide === "left" ? "bottom-14 left-0" : "bottom-14 right-0";
+
   if (!positionReady) return null;
 
   return (
@@ -345,14 +372,18 @@ export default function GuideBot({ activePage, onNavigate }) {
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onClick={toggleGuide}
-        className="rounded-full border border-cyan-300/45 bg-cyan-500/5 px-4 py-3 text-sm font-semibold text-cyan-100 shadow-lg backdrop-blur-sm"
-        style={{ touchAction: "none" }}
+        className={buttonClasses}
+        style={{
+          touchAction: "none",
+          writingMode: isDocked ? "vertical-rl" : "horizontal-tb",
+          textOrientation: isDocked ? "mixed" : "initial",
+        }}
       >
-        {open ? "Close Guide" : "Guide Bot"}
+        {isDocked ? "Guide" : open ? "Close Guide" : "Guide Bot"}
       </button>
 
       {open && (
-        <aside className="absolute bottom-14 right-0 w-[min(92vw,24rem)] rounded-xl border border-slate-300/30 bg-slate-950/35 p-4 text-slate-100 shadow-xl backdrop-blur-[2px]">
+        <aside className={`absolute ${panelPositionClass} w-[min(92vw,24rem)] rounded-xl border border-slate-300/30 bg-slate-950/35 p-4 text-slate-100 shadow-xl backdrop-blur-[2px]`}>
           <div
             className="mb-2 flex items-center justify-between rounded-lg border border-slate-400/35 bg-slate-900/25 px-2 py-1 text-xs text-slate-200"
             onMouseDown={handleMouseDown}
