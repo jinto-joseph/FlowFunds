@@ -79,6 +79,8 @@ function shouldBlockNotificationSetup() {
   }
 }
 
+const IN_APP_NOTIFICATIONS_DISABLED = true;
+
 export default function App() {
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState([]);
@@ -215,6 +217,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (IN_APP_NOTIFICATIONS_DISABLED) return;
     if (!lowBalance || notificationPermission !== "granted" || blockNotificationSetup) return;
     if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
@@ -232,6 +235,7 @@ export default function App() {
   }, [blockNotificationSetup, lowBalance, notificationPermission, summary.balance]);
 
   useEffect(() => {
+    if (IN_APP_NOTIFICATIONS_DISABLED) return;
     if (!debtMode || notificationPermission !== "granted" || blockNotificationSetup) return;
     if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
@@ -251,6 +255,7 @@ export default function App() {
   }, [blockNotificationSetup, debtMode, hasUnpaidLoans, notificationPermission, outstandingLoanTotal]);
 
   useEffect(() => {
+    if (IN_APP_NOTIFICATIONS_DISABLED) return;
     if (!canPaybackNow || notificationPermission !== "granted" || blockNotificationSetup) return;
     if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
@@ -276,6 +281,11 @@ export default function App() {
 
   async function enableNotifications() {
     try {
+      if (IN_APP_NOTIFICATIONS_DISABLED) {
+        setNotificationPermission("unsupported");
+        setPushStatus("In-app notifications are temporarily disabled for mobile stability.");
+        return;
+      }
       if (blockNotificationSetup) {
         setPushStatus("For stability, notification setup is disabled on mobile/PWA devices. Use desktop browser.");
         return;
@@ -518,10 +528,12 @@ export default function App() {
             <button
               type="button"
               onClick={enableNotifications}
-              disabled={blockNotificationSetup || notificationPermission === "granted" || notificationPermission === "denied"}
+              disabled={IN_APP_NOTIFICATIONS_DISABLED || blockNotificationSetup || notificationPermission === "granted" || notificationPermission === "denied"}
               className="w-full rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
-              {blockNotificationSetup
+              {IN_APP_NOTIFICATIONS_DISABLED
+                ? "Notifications temporarily disabled"
+                : blockNotificationSetup
                 ? "Notifications unavailable on phone"
                 : notificationPermission === "granted"
                 ? "Notifications enabled"
