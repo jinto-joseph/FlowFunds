@@ -352,7 +352,7 @@ export default function GuideBot({ activePage, onNavigate }) {
       </button>
 
       {open && (
-        <aside className="absolute left-0 top-14 w-[min(92vw,24rem)] rounded-xl border border-slate-300/30 bg-slate-950/35 p-4 text-slate-100 shadow-xl backdrop-blur-[2px]">
+        <aside className="absolute bottom-14 right-0 w-[min(92vw,24rem)] rounded-xl border border-slate-300/30 bg-slate-950/35 p-4 text-slate-100 shadow-xl backdrop-blur-[2px]">
           <div
             className="mb-2 flex items-center justify-between rounded-lg border border-slate-400/35 bg-slate-900/25 px-2 py-1 text-xs text-slate-200"
             onMouseDown={handleMouseDown}
