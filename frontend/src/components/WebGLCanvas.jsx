@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 /**
@@ -19,6 +19,7 @@ export default function WebGLCanvas({
 }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
+  const [fallbackMode, setFallbackMode] = useState(false);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -27,14 +28,24 @@ export default function WebGLCanvas({
     let W = window.innerWidth;
     let H = window.innerHeight;
     const isMobile = W < 768;
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    const lowCpu = (navigator.hardwareConcurrency ?? 8) <= 4;
+    const lowMemory = (navigator.deviceMemory ?? 8) <= 4;
+    const lowPowerMode = isMobile || prefersReducedMotion || lowCpu || lowMemory;
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 1000);
     camera.position.z = 32;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: !lowPowerMode, alpha: true, powerPreference: "low-power" });
+    } catch {
+      setFallbackMode(true);
+      return;
+    }
     renderer.setSize(W, H);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPowerMode ? 1 : 2));
     renderer.setClearColor(0x000000, 0);
     mount.appendChild(renderer.domElement);
 
@@ -134,7 +145,7 @@ export default function WebGLCanvas({
     }
 
     // ── Particle network ─────────────────────────────────────────────────────
-    const PARTICLE_COUNT = isMobile ? 90 : 160;
+    const PARTICLE_COUNT = lowPowerMode ? 36 : 160;
     const particles = [];
     const spread = 42;
 
@@ -168,7 +179,7 @@ export default function WebGLCanvas({
     }
 
     // ── Finance symbol sprites ───────────────────────────────────────────────
-    const SYMBOL_COUNT = isMobile ? 20 : 34;
+    const SYMBOL_COUNT = lowPowerMode ? 8 : 34;
     const symbols = [];
 
     const weightedTypes = ["income", "income", "expense", "expense", "cash", "cash", "cash", "debt"];
@@ -205,25 +216,30 @@ export default function WebGLCanvas({
     }
 
     // ── Connection lines ─────────────────────────────────────────────────────
-    const MAX_CONNECTIONS = isMobile ? 120 : 260;
-    const LINE_DIST = isMobile ? 8.4 : 9.5;
-    const linePositions = new Float32Array(MAX_CONNECTIONS * 2 * 3);
-    const lineColors = new Float32Array(MAX_CONNECTIONS * 2 * 3);
-    const lineGeo = new THREE.BufferGeometry();
-    lineGeo.setAttribute("position", new THREE.BufferAttribute(linePositions, 3));
-    lineGeo.setAttribute("color", new THREE.BufferAttribute(lineColors, 3));
-    lineGeo.setDrawRange(0, 0);
-    const lineMat = new THREE.LineSegments(
-      lineGeo,
-      new THREE.LineBasicMaterial({
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.22,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-    );
-    scene.add(lineMat);
+    const enableLines = !lowPowerMode;
+    const MAX_CONNECTIONS = enableLines ? 260 : 0;
+    const LINE_DIST = 9.5;
+    const linePositions = new Float32Array(Math.max(1, MAX_CONNECTIONS * 2 * 3));
+    const lineColors = new Float32Array(Math.max(1, MAX_CONNECTIONS * 2 * 3));
+    const lineGeo = enableLines ? new THREE.BufferGeometry() : null;
+    const lineMat = enableLines
+      ? new THREE.LineSegments(
+          lineGeo,
+          new THREE.LineBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.22,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          })
+        )
+      : null;
+    if (lineGeo) {
+      lineGeo.setAttribute("position", new THREE.BufferAttribute(linePositions, 3));
+      lineGeo.setAttribute("color", new THREE.BufferAttribute(lineColors, 3));
+      lineGeo.setDrawRange(0, 0);
+    }
+    if (lineMat) scene.add(lineMat);
 
     // ── Mouse state ──────────────────────────────────────────────────────────
     const mouse = { nx: 0, ny: 0 };   // normalised -1..1
@@ -252,15 +268,21 @@ export default function WebGLCanvas({
     stateRef.current.hasUnpaidLoans = hasUnpaidLoans;
     stateRef.current.paybackReady = paybackReady;
     stateRef.current.sceneMode = sceneMode;
+    stateRef.current.lowPowerMode = lowPowerMode;
 
     // ── Animation loop ───────────────────────────────────────────────────────
     let animId;
     let frame = 0;
+    let lastFrameTs = 0;
+    const targetFps = lowPowerMode ? 24 : 60;
+    const minFrameMs = 1000 / targetFps;
     const HALF_SPREAD_X = spread / 2 + 2;
     const HALF_SPREAD_Y = spread * 0.7 / 2 + 2;
 
-    const animate = () => {
+    const animate = (ts = 0) => {
       animId = requestAnimationFrame(animate);
+      if (ts - lastFrameTs < minFrameMs) return;
+      lastFrameTs = ts;
       frame++;
 
       const h = stateRef.current.health ?? 1;
@@ -273,7 +295,7 @@ export default function WebGLCanvas({
       mouse3D.set(mouse.nx * 24, mouse.ny * 16, 0);
 
       // Parallax camera drift
-      const modeDrift = mode === "analytics" ? 1.25 : mode === "loans" ? 0.9 : 1;
+      const modeDrift = (mode === "analytics" ? 1.25 : mode === "loans" ? 0.9 : 1) * (lowPowerMode ? 0.75 : 1);
       camera.position.x += (mouse.nx * 2.5 * modeDrift - camera.position.x) * 0.03;
       camera.position.y += (mouse.ny * 1.5 * modeDrift - camera.position.y) * 0.03;
       if (mode === "goals") {
@@ -322,7 +344,7 @@ export default function WebGLCanvas({
         // Colour + opacity
         p.material.color.copy(col);
         // Flicker more when chaotic (low balance)
-        const flickerAmt = (1 - h) * 0.3;
+        const flickerAmt = (1 - h) * (lowPowerMode ? 0.15 : 0.3);
         p.material.opacity = Math.min(0.7, p.material.opacity + (Math.random() - 0.5) * flickerAmt + (Math.sin(frame * u.pulseSpeed * 0.5 + u.pulsePhase) * 0.05));
         p.material.opacity = Math.max(0.05, Math.min(0.65, p.material.opacity));
       });
@@ -387,28 +409,30 @@ export default function WebGLCanvas({
       });
 
       // Update connection lines
-      let connCount = 0;
-      for (let i = 0; i < particles.length && connCount < MAX_CONNECTIONS; i++) {
-        for (let j = i + 1; j < particles.length && connCount < MAX_CONNECTIONS; j++) {
-          const a = particles[i].position;
-          const b = particles[j].position;
-          const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (d < LINE_DIST) {
-            const alpha = (1 - d / LINE_DIST) * 0.9;
-            const base = connCount * 6;
-            linePositions[base]     = a.x; linePositions[base + 1] = a.y; linePositions[base + 2] = a.z;
-            linePositions[base + 3] = b.x; linePositions[base + 4] = b.y; linePositions[base + 5] = b.z;
-            lineColors[base]     = col.r * alpha; lineColors[base + 1] = col.g * alpha; lineColors[base + 2] = col.b * alpha;
-            lineColors[base + 3] = col.r * alpha; lineColors[base + 4] = col.g * alpha; lineColors[base + 5] = col.b * alpha;
-            connCount++;
+      if (enableLines && lineGeo && lineMat) {
+        let connCount = 0;
+        for (let i = 0; i < particles.length && connCount < MAX_CONNECTIONS; i++) {
+          for (let j = i + 1; j < particles.length && connCount < MAX_CONNECTIONS; j++) {
+            const a = particles[i].position;
+            const b = particles[j].position;
+            const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < LINE_DIST) {
+              const alpha = (1 - d / LINE_DIST) * 0.9;
+              const base = connCount * 6;
+              linePositions[base]     = a.x; linePositions[base + 1] = a.y; linePositions[base + 2] = a.z;
+              linePositions[base + 3] = b.x; linePositions[base + 4] = b.y; linePositions[base + 5] = b.z;
+              lineColors[base]     = col.r * alpha; lineColors[base + 1] = col.g * alpha; lineColors[base + 2] = col.b * alpha;
+              lineColors[base + 3] = col.r * alpha; lineColors[base + 4] = col.g * alpha; lineColors[base + 5] = col.b * alpha;
+              connCount++;
+            }
           }
         }
+        lineMat.material.opacity = mode === "analytics" ? 0.3 : mode === "goals" ? 0.16 : 0.22;
+        lineGeo.attributes.position.needsUpdate = true;
+        lineGeo.attributes.color.needsUpdate = true;
+        lineGeo.setDrawRange(0, connCount * 2);
       }
-      lineMat.material.opacity = mode === "analytics" ? 0.3 : mode === "goals" ? 0.16 : 0.22;
-      lineGeo.attributes.position.needsUpdate = true;
-      lineGeo.attributes.color.needsUpdate = true;
-      lineGeo.setDrawRange(0, connCount * 2);
 
       renderer.render(scene, camera);
     };
@@ -421,6 +445,7 @@ export default function WebGLCanvas({
       camera.aspect = W / H;
       camera.updateProjectionMatrix();
       renderer.setSize(W, H);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowPowerMode ? 1 : 2));
     };
     window.addEventListener("resize", onResize);
 
@@ -432,6 +457,8 @@ export default function WebGLCanvas({
       renderer.dispose();
       glowTex.dispose();
       Object.values(symbolTextures).forEach((t) => t.dispose());
+      if (lineGeo) lineGeo.dispose();
+      if (lineMat) lineMat.material.dispose();
       if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
     };
   }, []);
@@ -449,6 +476,19 @@ export default function WebGLCanvas({
     stateRef.current.paybackReady = paybackReady;
     stateRef.current.sceneMode = sceneMode;
   }, [totalIncome, totalExpense, balance, hasUnpaidLoans, paybackReady, sceneMode]);
+
+  if (fallbackMode) {
+    return (
+      <div
+        className="fixed inset-0 pointer-events-none"
+        style={{
+          zIndex: 0,
+          background:
+            "radial-gradient(circle at 30% 20%, rgba(56,189,248,0.10), transparent 45%), radial-gradient(circle at 70% 0%, rgba(16,185,129,0.08), transparent 40%), #020617",
+        }}
+      />
+    );
+  }
 
   return (
     <div
