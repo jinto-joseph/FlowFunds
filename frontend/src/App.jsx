@@ -235,15 +235,24 @@ export default function App() {
 
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
-      const subscription =
-        existing ??
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(config.public_key)
-        }));
+
+      // Expired/stale subscriptions can survive locally and trigger 410 on server send.
+      // Recreate a fresh subscription whenever user enables push again.
+      if (existing) {
+        try {
+          await existing.unsubscribe();
+        } catch {
+          // Ignore and attempt creating a new subscription anyway.
+        }
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.public_key)
+      });
 
       await api.subscribePush(subscription.toJSON());
-      setPushStatus("Push enabled and saved on backend");
+      setPushStatus("Push enabled with a fresh subscription");
     } catch (pushError) {
       setPushStatus("Push setup failed");
     }
@@ -254,6 +263,8 @@ export default function App() {
       const result = await api.sendTestPush({ title: "FlowFunds test", message: "Push delivery check." });
       if (result?.message) {
         setPushStatus(result.message);
+      } else if ((result?.removed ?? 0) > 0 && (result?.sent ?? 0) === 0) {
+        setPushStatus("Old push subscription expired and was cleaned. Tap Enable push alerts once, then retry test.");
       } else if (result?.failures) {
         setPushStatus(`Test push failed for ${result.failures} subscription(s): ${result.error ?? "unknown error"}`);
       } else {
