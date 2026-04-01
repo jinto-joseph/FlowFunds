@@ -65,22 +65,6 @@ function isProbablyMobileDevice() {
   }
 }
 
-function shouldBlockNotificationSetup() {
-  try {
-    if (typeof window === "undefined" || typeof navigator === "undefined") return false;
-    const ua = navigator.userAgent || "";
-    const mobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
-    const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
-    const standaloneMode = window.matchMedia?.("(display-mode: standalone)")?.matches ?? false;
-    const touchOnly = (navigator.maxTouchPoints ?? 0) > 0 && coarsePointer;
-    return mobileUa || touchOnly || standaloneMode;
-  } catch {
-    return true;
-  }
-}
-
-const IN_APP_NOTIFICATIONS_DISABLED = true;
-
 export default function App() {
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState([]);
@@ -112,7 +96,6 @@ export default function App() {
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermissionSafe);
   const [pushStatus, setPushStatus] = useState("Push not enabled");
   const isMobile = useMemo(() => isProbablyMobileDevice(), []);
-  const blockNotificationSetup = useMemo(() => shouldBlockNotificationSetup(), []);
 
   const lowBalance = useMemo(() => summary.balance < threshold, [summary.balance, threshold]);
   const hasUnpaidLoans = useMemo(() => loans.some((l) => !l.is_paid), [loans]);
@@ -216,62 +199,6 @@ export default function App() {
     return () => window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
   }, []);
 
-  useEffect(() => {
-    if (IN_APP_NOTIFICATIONS_DISABLED) return;
-    if (!lowBalance || notificationPermission !== "granted" || blockNotificationSetup) return;
-    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
-    try {
-      const key = "flowfunds-notify-low-balance";
-      const last = Number(localStorage.getItem(key) || 0);
-      const now = Date.now();
-      if (now - last < 1000 * 60 * 30) return;
-      new Notification("FlowFunds: Low balance", {
-        body: `⚠️ Balance is low (₹${summary.balance.toFixed(2)}). Spend only for emergency needs.`
-      });
-      localStorage.setItem(key, String(now));
-    } catch {
-      // Notification may fail on mobile browsers with partial support.
-    }
-  }, [blockNotificationSetup, lowBalance, notificationPermission, summary.balance]);
-
-  useEffect(() => {
-    if (IN_APP_NOTIFICATIONS_DISABLED) return;
-    if (!debtMode || notificationPermission !== "granted" || blockNotificationSetup) return;
-    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
-    try {
-      const key = "flowfunds-notify-debt";
-      const last = Number(localStorage.getItem(key) || 0);
-      const now = Date.now();
-      if (now - last < 1000 * 60 * 30) return;
-      new Notification("FlowFunds: Payback pending", {
-        body: hasUnpaidLoans
-          ? `You still need to return ₹${outstandingLoanTotal.toFixed(2)}. Mark as paid once done.`
-          : "Your balance is negative. You likely borrowed money. Repay as soon as possible.",
-      });
-      localStorage.setItem(key, String(now));
-    } catch {
-      // Notification may fail on mobile browsers with partial support.
-    }
-  }, [blockNotificationSetup, debtMode, hasUnpaidLoans, notificationPermission, outstandingLoanTotal]);
-
-  useEffect(() => {
-    if (IN_APP_NOTIFICATIONS_DISABLED) return;
-    if (!canPaybackNow || notificationPermission !== "granted" || blockNotificationSetup) return;
-    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
-    try {
-      const key = "flowfunds-notify-repay-ready";
-      const last = Number(localStorage.getItem(key) || 0);
-      const now = Date.now();
-      if (now - last < 1000 * 60 * 30) return;
-      new Notification("FlowFunds: Ready to repay loans", {
-        body: `You now have enough balance to pay back ₹${outstandingLoanTotal.toFixed(2)}. Open payback checklist.`,
-      });
-      localStorage.setItem(key, String(now));
-    } catch {
-      // Notification may fail on mobile browsers with partial support.
-    }
-  }, [blockNotificationSetup, canPaybackNow, notificationPermission, outstandingLoanTotal]);
-
   async function installApp() {
     if (!deferredInstallPrompt) return;
     deferredInstallPrompt.prompt();
@@ -281,15 +208,6 @@ export default function App() {
 
   async function enableNotifications() {
     try {
-      if (IN_APP_NOTIFICATIONS_DISABLED) {
-        setNotificationPermission("unsupported");
-        setPushStatus("In-app notifications are temporarily disabled for mobile stability.");
-        return;
-      }
-      if (blockNotificationSetup) {
-        setPushStatus("For stability, notification setup is disabled on mobile/PWA devices. Use desktop browser.");
-        return;
-      }
       if (!("Notification" in window)) {
         setNotificationPermission("unsupported");
         setPushStatus("Notifications unsupported on this browser");
@@ -306,10 +224,6 @@ export default function App() {
 
   async function enablePushAlerts() {
     try {
-      if (blockNotificationSetup) {
-        setPushStatus("Push setup is disabled on mobile/PWA devices to prevent crashes. Use desktop browser.");
-        return;
-      }
       if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
         setPushStatus("Push unsupported on this device/browser");
         return;
@@ -528,14 +442,10 @@ export default function App() {
             <button
               type="button"
               onClick={enableNotifications}
-              disabled={IN_APP_NOTIFICATIONS_DISABLED || blockNotificationSetup || notificationPermission === "granted" || notificationPermission === "denied"}
+              disabled={notificationPermission === "granted" || notificationPermission === "denied"}
               className="w-full rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
-              {IN_APP_NOTIFICATIONS_DISABLED
-                ? "Notifications temporarily disabled"
-                : blockNotificationSetup
-                ? "Notifications unavailable on phone"
-                : notificationPermission === "granted"
+              {notificationPermission === "granted"
                 ? "Notifications enabled"
                 : notificationPermission === "denied"
                   ? "Notifications blocked"
@@ -544,10 +454,9 @@ export default function App() {
             <button
               type="button"
               onClick={enablePushAlerts}
-              disabled={blockNotificationSetup}
-              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 sm:w-auto"
             >
-              {blockNotificationSetup ? "Push setup unavailable on phone" : "Enable push alerts"}
+              Enable push alerts
             </button>
             <button
               type="button"
