@@ -1341,10 +1341,12 @@ def send_test_push(payload: dict | None = None) -> dict:
                 sent += 1
             except WebPushException as exc:
                 status_code = getattr(exc.response, "status_code", None) if getattr(exc, "response", None) else None
+                error_text = str(exc).lower()
                 failures += 1
                 if first_error is None:
                     first_error = str(exc)
-                if status_code in {404, 410}:
+                should_remove = status_code in {404, 410} or "410" in error_text or "unsubscribed" in error_text or "expired" in error_text
+                if should_remove:
                     conn.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (row["endpoint"],))
                     removed += 1
             except Exception as exc:

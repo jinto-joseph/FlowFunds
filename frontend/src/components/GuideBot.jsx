@@ -191,8 +191,8 @@ export default function GuideBot({ activePage, onNavigate }) {
 
   useEffect(() => {
     if (positionReady) return;
-    const x = Math.max(10, window.innerWidth - 150);
-    const y = Math.max(10, window.innerHeight - 72);
+    const x = Math.max(0, window.innerWidth - DOCKED_TAB_WIDTH);
+    const y = Math.max(10, Math.min(window.innerHeight - 120, Math.floor(window.innerHeight * 0.55)));
     setPosition({ x, y });
     setDockSide("right");
     setPositionReady(true);
