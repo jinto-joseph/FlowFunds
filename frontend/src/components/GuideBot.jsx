@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const DOCKED_TAB_WIDTH = 24;
+
 const STEPS = [
   {
     key: "navbar",
@@ -235,10 +237,10 @@ export default function GuideBot({ activePage, onNavigate }) {
         const currentX = dragRef.current.lastX;
         if (currentX <= 18) {
           setDockSide("left");
-          setPosition((prev) => ({ ...prev, x: 8 }));
+          setPosition((prev) => ({ ...prev, x: 0 }));
         } else if (currentX >= maxX - 18) {
           setDockSide("right");
-          setPosition((prev) => ({ ...prev, x: maxX - 8 }));
+          setPosition((prev) => ({ ...prev, x: Math.max(0, window.innerWidth - DOCKED_TAB_WIDTH) }));
         } else {
           setDockSide(null);
         }
