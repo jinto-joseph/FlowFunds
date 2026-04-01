@@ -163,7 +163,18 @@ export default function GuideBot({ activePage, onNavigate }) {
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
   const [clickMode, setClickMode] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [positionReady, setPositionReady] = useState(false);
   const highlightedRef = useRef(null);
+  const dragRef = useRef({
+    dragging: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
+  const clickSuppressUntilRef = useRef(0);
 
   const [selectedFeature, setSelectedFeature] = useState(null);
   const step = useMemo(() => {
@@ -172,6 +183,63 @@ export default function GuideBot({ activePage, onNavigate }) {
     }
     return STEPS[index];
   }, [index, selectedFeature]);
+
+  useEffect(() => {
+    if (positionReady) return;
+    const x = Math.max(10, window.innerWidth - 150);
+    const y = Math.max(10, window.innerHeight - 72);
+    setPosition({ x, y });
+    setPositionReady(true);
+  }, [positionReady]);
+
+  useEffect(() => {
+    function clamp(x, y) {
+      const maxX = Math.max(10, window.innerWidth - 44);
+      const maxY = Math.max(10, window.innerHeight - 44);
+      return {
+        x: Math.min(Math.max(10, x), maxX),
+        y: Math.min(Math.max(10, y), maxY),
+      };
+    }
+
+    function onMove(event) {
+      if (!dragRef.current.dragging) return;
+      const clientX = "touches" in event ? event.touches?.[0]?.clientX : event.clientX;
+      const clientY = "touches" in event ? event.touches?.[0]?.clientY : event.clientY;
+      if (typeof clientX !== "number" || typeof clientY !== "number") return;
+
+      const dx = clientX - dragRef.current.startX;
+      const dy = clientY - dragRef.current.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        dragRef.current.moved = true;
+      }
+
+      const next = clamp(dragRef.current.originX + dx, dragRef.current.originY + dy);
+      setPosition(next);
+      if ("touches" in event) {
+        event.preventDefault();
+      }
+    }
+
+    function onEnd() {
+      if (!dragRef.current.dragging) return;
+      dragRef.current.dragging = false;
+      if (dragRef.current.moved) {
+        clickSuppressUntilRef.current = Date.now() + 220;
+      }
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onEnd);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onEnd);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open || !step) return;
@@ -240,18 +308,60 @@ export default function GuideBot({ activePage, onNavigate }) {
     setIndex((prev) => Math.max(prev - 1, 0));
   }
 
+  function startDrag(clientX, clientY) {
+    dragRef.current.dragging = true;
+    dragRef.current.moved = false;
+    dragRef.current.startX = clientX;
+    dragRef.current.startY = clientY;
+    dragRef.current.originX = position.x;
+    dragRef.current.originY = position.y;
+  }
+
+  function handleMouseDown(event) {
+    if (event.button !== 0) return;
+    startDrag(event.clientX, event.clientY);
+  }
+
+  function handleTouchStart(event) {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    startDrag(touch.clientX, touch.clientY);
+  }
+
+  function toggleGuide() {
+    if (Date.now() < clickSuppressUntilRef.current) return;
+    setOpen((v) => !v);
+  }
+
+  if (!positionReady) return null;
+
   return (
-    <>
+    <div
+      className="fixed z-50"
+      style={{ left: `${position.x}px`, top: `${position.y}px` }}
+    >
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-4 right-4 z-50 rounded-full border border-cyan-400/60 bg-cyan-500/20 px-4 py-3 text-sm font-semibold text-cyan-100 shadow-lg backdrop-blur"
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        onClick={toggleGuide}
+        className="rounded-full border border-cyan-300/55 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-100 shadow-lg backdrop-blur-md"
+        style={{ touchAction: "none" }}
       >
         {open ? "Close Guide" : "Guide Bot"}
       </button>
 
       {open && (
-        <aside className="fixed bottom-20 right-3 z-50 w-[calc(100%-1.5rem)] max-w-sm rounded-xl border border-slate-600 bg-slate-950/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm">
+        <aside className="absolute left-0 top-14 w-[min(92vw,24rem)] rounded-xl border border-slate-500/55 bg-slate-950/58 p-4 text-slate-100 shadow-2xl backdrop-blur-md">
+          <div
+            className="mb-2 flex items-center justify-between rounded-lg border border-slate-600/60 bg-slate-900/45 px-2 py-1 text-xs text-slate-300"
+            onMouseDown={handleMouseDown}
+            onTouchStart={handleTouchStart}
+            style={{ touchAction: "none", cursor: "move" }}
+          >
+            <span>Drag guide</span>
+            <span>:::</span>
+          </div>
           <p className="text-xs uppercase tracking-wide text-cyan-300">
             {selectedFeature ? "Selected Feature" : `Step ${index + 1} of ${STEPS.length}`}
           </p>
@@ -301,6 +411,6 @@ export default function GuideBot({ activePage, onNavigate }) {
           </div>
         </aside>
       )}
-    </>
+    </div>
   );
 }
