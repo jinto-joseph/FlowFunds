@@ -139,7 +139,7 @@ export default function WebGLCanvas({
         cash: cashRatio,
         debt: debtRatio,
         payoff: payoffRatio,
-        debt,
+        debtMode: debt,
         ready,
       };
     }
@@ -393,7 +393,7 @@ export default function WebGLCanvas({
         }
 
         // Debt mode highlights symbols
-        const debtBoost = mix.debt ? 1.25 : 1;
+        const debtBoost = mix.debtMode ? 1.25 : 1;
         const payoffBoost = mix.ready ? 1.15 : 1;
         const pulse = 1 + Math.sin(frame * u.pulseSpeed + u.pulse) * 0.18;
         const scale = u.baseScale * pulse * (0.8 + h * 0.35) * debtBoost * payoffBoost;

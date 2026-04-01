@@ -56,6 +56,15 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function isProbablyMobileDevice() {
+  try {
+    if (typeof navigator === "undefined") return false;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || "");
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState([]);
@@ -86,6 +95,7 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermissionSafe);
   const [pushStatus, setPushStatus] = useState("Push not enabled");
+  const isMobile = useMemo(() => isProbablyMobileDevice(), []);
 
   const lowBalance = useMemo(() => summary.balance < threshold, [summary.balance, threshold]);
   const hasUnpaidLoans = useMemo(() => loans.some((l) => !l.is_paid), [loans]);
@@ -190,39 +200,57 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!lowBalance || notificationPermission !== "granted") return;
+    if (!lowBalance || notificationPermission !== "granted" || isMobile) return;
+    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
+      const key = "flowfunds-notify-low-balance";
+      const last = Number(localStorage.getItem(key) || 0);
+      const now = Date.now();
+      if (now - last < 1000 * 60 * 30) return;
       new Notification("FlowFunds: Low balance", {
         body: `⚠️ Balance is low (₹${summary.balance.toFixed(2)}). Spend only for emergency needs.`
       });
+      localStorage.setItem(key, String(now));
     } catch {
       // Notification may fail on mobile browsers with partial support.
     }
-  }, [lowBalance, notificationPermission, summary.balance]);
+  }, [isMobile, lowBalance, notificationPermission, summary.balance]);
 
   useEffect(() => {
-    if (!debtMode || notificationPermission !== "granted") return;
+    if (!debtMode || notificationPermission !== "granted" || isMobile) return;
+    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
+      const key = "flowfunds-notify-debt";
+      const last = Number(localStorage.getItem(key) || 0);
+      const now = Date.now();
+      if (now - last < 1000 * 60 * 30) return;
       new Notification("FlowFunds: Payback pending", {
         body: hasUnpaidLoans
           ? `You still need to return ₹${outstandingLoanTotal.toFixed(2)}. Mark as paid once done.`
           : "Your balance is negative. You likely borrowed money. Repay as soon as possible.",
       });
+      localStorage.setItem(key, String(now));
     } catch {
       // Notification may fail on mobile browsers with partial support.
     }
-  }, [debtMode, hasUnpaidLoans, notificationPermission, outstandingLoanTotal]);
+  }, [debtMode, hasUnpaidLoans, isMobile, notificationPermission, outstandingLoanTotal]);
 
   useEffect(() => {
-    if (!canPaybackNow || notificationPermission !== "granted") return;
+    if (!canPaybackNow || notificationPermission !== "granted" || isMobile) return;
+    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     try {
+      const key = "flowfunds-notify-repay-ready";
+      const last = Number(localStorage.getItem(key) || 0);
+      const now = Date.now();
+      if (now - last < 1000 * 60 * 30) return;
       new Notification("FlowFunds: Ready to repay loans", {
         body: `You now have enough balance to pay back ₹${outstandingLoanTotal.toFixed(2)}. Open payback checklist.`,
       });
+      localStorage.setItem(key, String(now));
     } catch {
       // Notification may fail on mobile browsers with partial support.
     }
-  }, [canPaybackNow, notificationPermission, outstandingLoanTotal]);
+  }, [canPaybackNow, isMobile, notificationPermission, outstandingLoanTotal]);
 
   async function installApp() {
     if (!deferredInstallPrompt) return;
