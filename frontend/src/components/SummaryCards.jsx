@@ -6,6 +6,8 @@ export default function SummaryCards({ summary, prediction }) {
   const expense = useAnimatedNumber(summary.total_expense, 900, 2);
   const cashInHandIncome = useAnimatedNumber(summary.income_cash_in_hand ?? 0, 900, 2);
   const bankIncome = useAnimatedNumber(summary.income_bank_account ?? 0, 900, 2);
+  const cashInHandExpense = useAnimatedNumber(summary.expense_cash_in_hand ?? 0, 900, 2);
+  const bankExpense = useAnimatedNumber(summary.expense_bank_account ?? 0, 900, 2);
 
   return (
     <>
@@ -20,9 +22,11 @@ export default function SummaryCards({ summary, prediction }) {
         />
       </section>
 
-      <section className="mt-3 grid gap-3 sm:grid-cols-2">
+      <section className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card title="Income: Cash in Hand" value={`₹${cashInHandIncome.toFixed(2)}`} tone="emerald" />
         <Card title="Income: Bank Account" value={`₹${bankIncome.toFixed(2)}`} tone="cyan" />
+        <Card title="Expense: From Cash" value={`₹${cashInHandExpense.toFixed(2)}`} tone="rose" />
+        <Card title="Expense: From Bank" value={`₹${bankExpense.toFixed(2)}`} tone="violet" />
       </section>
     </>
   );

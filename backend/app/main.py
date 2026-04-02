@@ -217,13 +217,14 @@ def add_income(payload: IncomeCreate) -> dict:
 
 @app.post("/expense")
 def add_expense(payload: ExpenseCreate) -> dict:
+    bucket = payload.expense_bucket if payload.expense_bucket in {"cash_in_hand", "bank_account"} else "cash_in_hand"
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO transactions (kind, amount, source, category, date, note)
-            VALUES (?, ?, NULL, ?, ?, ?)
+            INSERT INTO transactions (kind, amount, source, income_bucket, category, date, note)
+            VALUES (?, ?, NULL, ?, ?, ?, ?)
             """,
-            ("expense", payload.amount, payload.category, payload.date.isoformat(), payload.note),
+            ("expense", payload.amount, bucket, payload.category, payload.date.isoformat(), payload.note),
         )
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Expense recorded"}
@@ -247,6 +248,7 @@ def get_transactions() -> dict:
             "amount": row["amount"],
             "source": row["source"],
             "income_bucket": row["income_bucket"],
+            "expense_bucket": row["income_bucket"] if row["kind"] == "expense" else None,
             "category": row["category"],
             "date": row["date"],
             "note": row["note"],
@@ -259,7 +261,7 @@ def get_transactions() -> dict:
 
 @app.patch("/transactions/{transaction_id}")
 def update_transaction(transaction_id: int, payload: dict) -> dict:
-    allowed = {"kind", "amount", "source", "income_bucket", "category", "date", "note"}
+    allowed = {"kind", "amount", "source", "income_bucket", "expense_bucket", "category", "date", "note"}
     incoming = {k: payload[k] for k in payload if k in allowed}
     if not incoming:
         raise HTTPException(status_code=400, detail="No valid fields to update")
@@ -289,6 +291,7 @@ def update_transaction(transaction_id: int, payload: dict) -> dict:
 
         source = incoming.get("source", row["source"])
         income_bucket = incoming.get("income_bucket", row["income_bucket"])
+        expense_bucket = incoming.get("expense_bucket", row["income_bucket"])
         category = incoming.get("category", row["category"])
         note = incoming.get("note", row["note"]) or ""
 
@@ -299,7 +302,7 @@ def update_transaction(transaction_id: int, payload: dict) -> dict:
         else:
             category = category or "Misc"
             source = None
-            income_bucket = None
+            income_bucket = expense_bucket if expense_bucket in {"cash_in_hand", "bank_account"} else "cash_in_hand"
 
         conn.execute(
             """
@@ -767,6 +770,12 @@ def get_summary() -> Summary:
         income_bank_account = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND income_bucket='bank_account'"
         ).fetchone()[0]
+        expense_cash_in_hand = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND income_bucket='cash_in_hand'"
+        ).fetchone()[0]
+        expense_bank_account = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND income_bucket='bank_account'"
+        ).fetchone()[0]
 
     return Summary(
         balance=income - expense,
@@ -774,6 +783,8 @@ def get_summary() -> Summary:
         total_expense=expense,
         income_cash_in_hand=income_cash_in_hand,
         income_bank_account=income_bank_account,
+        expense_cash_in_hand=expense_cash_in_hand,
+        expense_bank_account=expense_bank_account,
     )
 
 

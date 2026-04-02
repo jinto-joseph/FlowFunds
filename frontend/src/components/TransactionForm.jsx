@@ -6,6 +6,7 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
   const [incomeBucket, setIncomeBucket] = useState("cash_in_hand");
+  const [expenseBucket, setExpenseBucket] = useState("cash_in_hand");
   const [category, setCategory] = useState(categories[0]);
   const [note, setNote] = useState("");
   const [formError, setFormError] = useState("");
@@ -32,13 +33,17 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
       payload.source = source || "Other";
       payload.income_bucket = incomeBucket;
     }
-    if (mode === "expense") payload.category = category;
+    if (mode === "expense") {
+      payload.category = category;
+      payload.expense_bucket = expenseBucket;
+    }
 
     try {
       await onSubmit(payload);
       setAmount("");
       setSource("");
       setIncomeBucket("cash_in_hand");
+      setExpenseBucket("cash_in_hand");
       setNote("");
     } catch {
       setFormError("Could not save transaction. Please try again.");
@@ -98,6 +103,16 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
                 {item}
               </option>
             ))}
+          </select>
+
+          <label className="mb-2 block text-sm text-slate-300">Paid From</label>
+          <select
+            value={expenseBucket}
+            onChange={(e) => setExpenseBucket(e.target.value)}
+            className="mb-3 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+          >
+            <option value="cash_in_hand">Cash in hand</option>
+            <option value="bank_account">Bank account</option>
           </select>
         </>
       )}

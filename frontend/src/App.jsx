@@ -29,6 +29,8 @@ const DEFAULT_SUMMARY = {
   total_expense: 0,
   income_cash_in_hand: 0,
   income_bank_account: 0,
+  expense_cash_in_hand: 0,
+  expense_bank_account: 0,
 };
 
 function getSafeStoredThreshold() {

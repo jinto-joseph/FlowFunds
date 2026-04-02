@@ -15,6 +15,7 @@ class IncomeCreate(BaseModel):
 class ExpenseCreate(BaseModel):
     amount: float = Field(gt=0)
     category: str
+    expense_bucket: Literal["cash_in_hand", "bank_account"] = "cash_in_hand"
     date: datetime
     note: str = ""
 
@@ -36,3 +37,5 @@ class Summary(BaseModel):
     total_expense: float
     income_cash_in_hand: float = 0
     income_bank_account: float = 0
+    expense_cash_in_hand: float = 0
+    expense_bank_account: float = 0

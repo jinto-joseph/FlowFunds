@@ -13,6 +13,7 @@ export default function TransactionsList({ transactions = [], onUpdateTransactio
       amount: String(tx.amount ?? ""),
       source: tx.source ?? "",
       income_bucket: tx.income_bucket ?? "cash_in_hand",
+      expense_bucket: tx.expense_bucket ?? tx.income_bucket ?? "cash_in_hand",
       category: tx.category ?? "Misc",
       date: (tx.date ?? "").slice(0, 10),
       note: tx.note ?? "",
@@ -39,6 +40,7 @@ export default function TransactionsList({ transactions = [], onUpdateTransactio
         amount,
         source: draft.kind === "income" ? draft.source : null,
         income_bucket: draft.kind === "income" ? draft.income_bucket : null,
+        expense_bucket: draft.kind === "expense" ? draft.expense_bucket : null,
         category: draft.kind === "expense" ? draft.category : null,
         date: draft.date,
         note: draft.note,
@@ -68,7 +70,7 @@ export default function TransactionsList({ transactions = [], onUpdateTransactio
                       <p className="font-medium text-white">
                         {tx.kind === "income"
                           ? `${tx.source || "Income"} (${tx.income_bucket === "bank_account" ? "Bank" : "Cash"})`
-                          : tx.category || "Expense"}
+                          : `${tx.category || "Expense"} (${(tx.expense_bucket ?? tx.income_bucket) === "bank_account" ? "from Bank" : "from Cash"})`}
                       </p>
                       <p className="text-sm text-slate-300">{new Date(tx.date).toLocaleString()}</p>
                     </div>
@@ -126,12 +128,22 @@ export default function TransactionsList({ transactions = [], onUpdateTransactio
                           </select>
                         </>
                       ) : (
-                        <input
-                          value={draft.category}
-                          onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
-                          className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white"
-                          placeholder="Category"
-                        />
+                        <>
+                          <input
+                            value={draft.category}
+                            onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
+                            className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white"
+                            placeholder="Category"
+                          />
+                          <select
+                            value={draft.expense_bucket}
+                            onChange={(e) => setDraft((d) => ({ ...d, expense_bucket: e.target.value }))}
+                            className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white"
+                          >
+                            <option value="cash_in_hand">Paid from cash</option>
+                            <option value="bank_account">Paid from bank</option>
+                          </select>
+                        </>
                       )}
                       <input
                         value={draft.note}
