@@ -1,0 +1,56 @@
+{
+  "packageId": "com.jinto.flowfunds",
+  "host": "flow-funds-n0m9d0619-jinto-s-projects.vercel.app",
+  "name": "FlowFunds",
+  "launcherName": "FlowFunds",
+  "display": "standalone",
+  "themeColor": "#111827",
+  "themeColorDark": "#000000",
+  "navigationColor": "#000000",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#111827",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://flow-funds-n0m9d0619-jinto-s-projects.vercel.app/pwa-512.svg",
+  "maskableIconUrl": "https://flow-funds-n0m9d0619-jinto-s-projects.vercel.app/pwa-maskable.svg",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "/home/jinto/Desktop/FlowFunds/android-twa/android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "2",
+  "appVersionCode": 2,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://flow-funds-n0m9d0619-jinto-s-projects.vercel.app/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": true
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://flow-funds-n0m9d0619-jinto-s-projects.vercel.app/",
+  "minSdkVersion": 21,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "name": "release",
+      "value": "D7:84:6C:6F:DB:8A:B3:E4:1B:EF:EE:C8:2F:78:A1:A8:70:31:E2:A0:9F:B5:B4:3A:DB:0C:C7:E2:FC:A8:BC:5E"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [],
+  "appVersion": "2"
+}
