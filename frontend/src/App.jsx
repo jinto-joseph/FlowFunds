@@ -23,7 +23,13 @@ import AppNavbar from "./components/AppNavbar";
 import TodayLedger from "./components/TodayLedger";
 import GuideBot from "./components/GuideBot";
 
-const DEFAULT_SUMMARY = { balance: 0, total_income: 0, total_expense: 0 };
+const DEFAULT_SUMMARY = {
+  balance: 0,
+  total_income: 0,
+  total_expense: 0,
+  income_cash_in_hand: 0,
+  income_bank_account: 0,
+};
 
 function getSafeStoredThreshold() {
   try {

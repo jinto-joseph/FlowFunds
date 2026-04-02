@@ -19,6 +19,7 @@ def init_db() -> None:
                 kind TEXT NOT NULL CHECK(kind IN ('income','expense')),
                 amount REAL NOT NULL,
                 source TEXT,
+                income_bucket TEXT,
                 category TEXT,
                 date TEXT NOT NULL,
                 note TEXT DEFAULT ''
@@ -87,5 +88,10 @@ def init_db() -> None:
         loan_columns = {row["name"] for row in conn.execute("PRAGMA table_info(loans)").fetchall()}
         if "due_date" not in loan_columns:
             conn.execute("ALTER TABLE loans ADD COLUMN due_date TEXT")
+
+        # Migration-safe: add income_bucket to older transactions tables.
+        tx_columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
+        if "income_bucket" not in tx_columns:
+            conn.execute("ALTER TABLE transactions ADD COLUMN income_bucket TEXT")
 
         conn.commit()

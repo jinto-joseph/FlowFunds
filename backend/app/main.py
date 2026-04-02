@@ -202,13 +202,14 @@ def push_config() -> dict:
 
 @app.post("/income")
 def add_income(payload: IncomeCreate) -> dict:
+    bucket = payload.income_bucket if payload.income_bucket in {"cash_in_hand", "bank_account"} else "cash_in_hand"
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO transactions (kind, amount, source, category, date, note)
-            VALUES (?, ?, ?, NULL, ?, ?)
+            INSERT INTO transactions (kind, amount, source, income_bucket, category, date, note)
+            VALUES (?, ?, ?, ?, NULL, ?, ?)
             """,
-            ("income", payload.amount, payload.source, payload.date.isoformat(), payload.note),
+            ("income", payload.amount, payload.source, bucket, payload.date.isoformat(), payload.note),
         )
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Income recorded"}
@@ -233,7 +234,7 @@ def get_transactions() -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT id, kind, amount, source, category, date, note
+            SELECT id, kind, amount, source, income_bucket, category, date, note
             FROM transactions
             ORDER BY date DESC, id DESC
             """
@@ -245,6 +246,7 @@ def get_transactions() -> dict:
             "kind": row["kind"],
             "amount": row["amount"],
             "source": row["source"],
+            "income_bucket": row["income_bucket"],
             "category": row["category"],
             "date": row["date"],
             "note": row["note"],
@@ -257,14 +259,14 @@ def get_transactions() -> dict:
 
 @app.patch("/transactions/{transaction_id}")
 def update_transaction(transaction_id: int, payload: dict) -> dict:
-    allowed = {"kind", "amount", "source", "category", "date", "note"}
+    allowed = {"kind", "amount", "source", "income_bucket", "category", "date", "note"}
     incoming = {k: payload[k] for k in payload if k in allowed}
     if not incoming:
         raise HTTPException(status_code=400, detail="No valid fields to update")
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, kind, amount, source, category, date, note FROM transactions WHERE id=?",
+            "SELECT id, kind, amount, source, income_bucket, category, date, note FROM transactions WHERE id=?",
             (transaction_id,),
         ).fetchone()
         if not row:
@@ -286,23 +288,26 @@ def update_transaction(transaction_id: int, payload: dict) -> dict:
             raise HTTPException(status_code=400, detail="Invalid date")
 
         source = incoming.get("source", row["source"])
+        income_bucket = incoming.get("income_bucket", row["income_bucket"])
         category = incoming.get("category", row["category"])
         note = incoming.get("note", row["note"]) or ""
 
         if kind == "income":
             source = source or "Other"
+            income_bucket = income_bucket if income_bucket in {"cash_in_hand", "bank_account"} else "cash_in_hand"
             category = None
         else:
             category = category or "Misc"
             source = None
+            income_bucket = None
 
         conn.execute(
             """
             UPDATE transactions
-            SET kind=?, amount=?, source=?, category=?, date=?, note=?
+            SET kind=?, amount=?, source=?, income_bucket=?, category=?, date=?, note=?
             WHERE id=?
             """,
-            (kind, amount, source, category, date_value, note, transaction_id),
+            (kind, amount, source, income_bucket, category, date_value, note, transaction_id),
         )
         conn.commit()
 
@@ -756,8 +761,20 @@ def get_summary() -> Summary:
     with get_conn() as conn:
         income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0]
         expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0]
+        income_cash_in_hand = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND income_bucket='cash_in_hand'"
+        ).fetchone()[0]
+        income_bank_account = conn.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND income_bucket='bank_account'"
+        ).fetchone()[0]
 
-    return Summary(balance=income - expense, total_income=income, total_expense=expense)
+    return Summary(
+        balance=income - expense,
+        total_income=income,
+        total_expense=expense,
+        income_cash_in_hand=income_cash_in_hand,
+        income_bank_account=income_bank_account,
+    )
 
 
 @app.get("/analytics/category")

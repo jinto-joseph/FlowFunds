@@ -4,18 +4,27 @@ export default function SummaryCards({ summary, prediction }) {
   const balance = useAnimatedNumber(summary.balance, 800, 2);
   const income = useAnimatedNumber(summary.total_income, 900, 2);
   const expense = useAnimatedNumber(summary.total_expense, 900, 2);
+  const cashInHandIncome = useAnimatedNumber(summary.income_cash_in_hand ?? 0, 900, 2);
+  const bankIncome = useAnimatedNumber(summary.income_bank_account ?? 0, 900, 2);
 
   return (
-    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <Card title="Current Balance" value={`₹${balance.toFixed(2)}`} tone="emerald" />
-      <Card title="Total Income" value={`₹${income.toFixed(2)}`} tone="cyan" />
-      <Card title="Total Expense" value={`₹${expense.toFixed(2)}`} tone="rose" />
-      <Card
-        title="Money lasts"
-        value={prediction.days_left || prediction.days_left === 0 ? `${prediction.days_left} days` : "--"}
-        tone="violet"
-      />
-    </section>
+    <>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card title="Current Balance" value={`₹${balance.toFixed(2)}`} tone="emerald" />
+        <Card title="Total Income" value={`₹${income.toFixed(2)}`} tone="cyan" />
+        <Card title="Total Expense" value={`₹${expense.toFixed(2)}`} tone="rose" />
+        <Card
+          title="Money lasts"
+          value={prediction.days_left || prediction.days_left === 0 ? `${prediction.days_left} days` : "--"}
+          tone="violet"
+        />
+      </section>
+
+      <section className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Card title="Income: Cash in Hand" value={`₹${cashInHandIncome.toFixed(2)}`} tone="emerald" />
+        <Card title="Income: Bank Account" value={`₹${bankIncome.toFixed(2)}`} tone="cyan" />
+      </section>
+    </>
   );
 }
 
