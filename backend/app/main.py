@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # Load .env from the backend directory (parent of app/)
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pywebpush import WebPushException, webpush
 
@@ -231,14 +231,17 @@ def add_expense(payload: ExpenseCreate) -> dict:
 
 
 @app.get("/transactions")
-def get_transactions() -> dict:
+def get_transactions(limit: int = Query(default=120, ge=1, le=1000), offset: int = Query(default=0, ge=0)) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT id, kind, amount, source, income_bucket, category, date, note
             FROM transactions
             ORDER BY date DESC, id DESC
+            LIMIT ? OFFSET ?
             """
+            ,
+            (limit, offset),
         ).fetchall()
 
     transactions = [
@@ -762,20 +765,25 @@ def update_goal(goal_id: int, payload: dict) -> dict:
 @app.get("/summary", response_model=Summary)
 def get_summary() -> Summary:
     with get_conn() as conn:
-        income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0]
-        expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0]
-        income_cash_in_hand = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND income_bucket='cash_in_hand'"
-        ).fetchone()[0]
-        income_bank_account = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND income_bucket='bank_account'"
-        ).fetchone()[0]
-        expense_cash_in_hand = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND income_bucket='cash_in_hand'"
-        ).fetchone()[0]
-        expense_bank_account = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND income_bucket='bank_account'"
-        ).fetchone()[0]
+        row = conn.execute(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN kind='income' THEN amount ELSE 0 END), 0) AS income,
+              COALESCE(SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END), 0) AS expense,
+              COALESCE(SUM(CASE WHEN kind='income' AND income_bucket='cash_in_hand' THEN amount ELSE 0 END), 0) AS income_cash_in_hand,
+              COALESCE(SUM(CASE WHEN kind='income' AND income_bucket='bank_account' THEN amount ELSE 0 END), 0) AS income_bank_account,
+              COALESCE(SUM(CASE WHEN kind='expense' AND income_bucket='cash_in_hand' THEN amount ELSE 0 END), 0) AS expense_cash_in_hand,
+              COALESCE(SUM(CASE WHEN kind='expense' AND income_bucket='bank_account' THEN amount ELSE 0 END), 0) AS expense_bank_account
+            FROM transactions
+            """
+        ).fetchone()
+
+    income = float(row["income"] or 0)
+    expense = float(row["expense"] or 0)
+    income_cash_in_hand = float(row["income_cash_in_hand"] or 0)
+    income_bank_account = float(row["income_bank_account"] or 0)
+    expense_cash_in_hand = float(row["expense_cash_in_hand"] or 0)
+    expense_bank_account = float(row["expense_bank_account"] or 0)
 
     return Summary(
         balance=income - expense,
@@ -786,6 +794,71 @@ def get_summary() -> Summary:
         expense_cash_in_hand=expense_cash_in_hand,
         expense_bank_account=expense_bank_account,
     )
+
+
+@app.get("/analytics/cashflow")
+def get_cashflow_analytics(
+    group_by: str = Query(default="month"),
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+) -> dict:
+    if group_by not in {"day", "week", "month"}:
+        raise HTTPException(status_code=400, detail="group_by must be one of day, week, month")
+
+    end_obj = parse_iso_date(end_date) or dt_date.today()
+    default_start = end_obj - timedelta(days=90)
+    start_obj = parse_iso_date(start_date) or default_start
+    if start_obj > end_obj:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
+    if group_by == "day":
+        period_expr = "date(date)"
+    elif group_by == "week":
+        period_expr = "strftime('%Y-W%W', date)"
+    else:
+        period_expr = "strftime('%Y-%m', date)"
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+              {period_expr} AS period,
+              COALESCE(SUM(CASE WHEN kind='income' THEN amount ELSE 0 END), 0) AS income,
+              COALESCE(SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END), 0) AS expense
+            FROM transactions
+            WHERE date(date) >= date(?) AND date(date) <= date(?)
+            GROUP BY period
+            ORDER BY period ASC
+            """,
+            (start_obj.isoformat(), end_obj.isoformat()),
+        ).fetchall()
+
+    series = []
+    total_income = 0.0
+    total_expense = 0.0
+    for row in rows:
+        income_val = float(row["income"] or 0)
+        expense_val = float(row["expense"] or 0)
+        total_income += income_val
+        total_expense += expense_val
+        series.append(
+            {
+                "period": row["period"],
+                "income": round(income_val, 2),
+                "expense": round(expense_val, 2),
+                "net": round(income_val - expense_val, 2),
+            }
+        )
+
+    return {
+        "group_by": group_by,
+        "start_date": start_obj.isoformat(),
+        "end_date": end_obj.isoformat(),
+        "total_income": round(total_income, 2),
+        "total_expense": round(total_expense, 2),
+        "net": round(total_income - total_expense, 2),
+        "series": series,
+    }
 
 
 @app.get("/analytics/category")

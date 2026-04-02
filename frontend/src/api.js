@@ -30,9 +30,16 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   health: () => apiFetch("/health"),
-  getTransactions: () => apiFetch("/transactions"),
+  getTransactions: ({ limit = 120, offset = 0 } = {}) => apiFetch(`/transactions?limit=${limit}&offset=${offset}`),
   updateTransaction: (id, payload) => apiFetch(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   getSummary: () => apiFetch("/summary"),
+  getCashflowAnalytics: ({ groupBy = "month", startDate, endDate } = {}) => {
+    const params = new URLSearchParams();
+    params.set("group_by", groupBy);
+    if (startDate) params.set("start_date", startDate);
+    if (endDate) params.set("end_date", endDate);
+    return apiFetch(`/analytics/cashflow?${params.toString()}`);
+  },
   getCategoryAnalytics: () => apiFetch("/analytics/category"),
   getSurvivalPrediction: () => apiFetch("/predict/survival-days"),
   getPaybackPlan: () => apiFetch("/predict/payback-plan"),

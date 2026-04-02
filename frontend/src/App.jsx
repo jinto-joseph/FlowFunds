@@ -22,6 +22,7 @@ import GoalTracker from "./components/GoalTracker";
 import AppNavbar from "./components/AppNavbar";
 import TodayLedger from "./components/TodayLedger";
 import GuideBot from "./components/GuideBot";
+import CashflowAnalytics from "./components/CashflowAnalytics";
 
 const DEFAULT_SUMMARY = {
   balance: 0,
@@ -66,6 +67,13 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 export default function App() {
+  const defaultEndDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const defaultStartDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 90);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState([]);
   const [categoryData, setCategoryData] = useState([]);
@@ -88,6 +96,13 @@ export default function App() {
   const [monthlyAnalysis, setMonthlyAnalysis] = useState({ categories: [], daily: [] });
   const [activePage, setActivePage] = useState("dashboard");
   const [showPaybackPrompt, setShowPaybackPrompt] = useState(false);
+  const [cashflowFilters, setCashflowFilters] = useState({
+    groupBy: "month",
+    startDate: defaultStartDate,
+    endDate: defaultEndDate,
+  });
+  const [cashflowData, setCashflowData] = useState({ series: [], total_income: 0, total_expense: 0, net: 0 });
+  const [cashflowLoading, setCashflowLoading] = useState(false);
 
   const [threshold, setThreshold] = useState(getSafeStoredThreshold);
   const [loading, setLoading] = useState(false);
@@ -132,7 +147,7 @@ export default function App() {
         monthlyResp,
       ] = await Promise.all([
         api.getSummary(),
-        api.getTransactions(),
+        api.getTransactions({ limit: 120, offset: 0 }),
         api.getCategoryAnalytics(),
         api.getSurvivalPrediction(),
         api.getDailyTrend(),
@@ -179,6 +194,21 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    async function loadCashflow() {
+      setCashflowLoading(true);
+      try {
+        const data = await api.getCashflowAnalytics(cashflowFilters);
+        setCashflowData(data ?? { series: [], total_income: 0, total_expense: 0, net: 0 });
+      } catch {
+        setCashflowData({ series: [], total_income: 0, total_expense: 0, net: 0 });
+      } finally {
+        setCashflowLoading(false);
+      }
+    }
+    loadCashflow();
+  }, [cashflowFilters]);
 
   useEffect(() => {
     try {
@@ -634,6 +664,12 @@ export default function App() {
 
         {activePage === "analytics" && (
           <>
+            <CashflowAnalytics
+              data={cashflowData}
+              filters={cashflowFilters}
+              onChangeFilters={setCashflowFilters}
+              loading={cashflowLoading}
+            />
             <section className="grid gap-4 lg:grid-cols-2">
               <div data-guide-key="spending-tips">
                 <SpendingTips tips={tips} />
