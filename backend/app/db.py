@@ -1,7 +1,12 @@
 import sqlite3
+import os
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[1] / "flowfunds.db"
+_default_db_path = Path(__file__).resolve().parents[1] / "flowfunds.db"
+DB_PATH = Path(os.getenv("FLOWFUNDS_DB_PATH", str(_default_db_path))).expanduser()
+
+# Ensure directory exists when using mounted/persistent paths.
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def get_conn() -> sqlite3.Connection:

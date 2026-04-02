@@ -5,9 +5,15 @@ services:
     rootDir: backend
     buildCommand: python -m pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: flowfunds-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
+      - key: FLOWFUNDS_DB_PATH
+        value: /var/data/flowfunds.db
       - key: FRONTEND_ORIGINS
         sync: false          # Set this in Render dashboard after frontend deploy
       - key: VAPID_PUBLIC_KEY
