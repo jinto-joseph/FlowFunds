@@ -28,13 +28,13 @@
     <!-- Value from default config. -->
     <string name="fallbackType" translatable="false">customtabs</string>
     <!-- Value from default config. -->
-    <string name="fullScopeUrl" translatable="false">https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app/</string>
+    <string name="fullScopeUrl" translatable="false">https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app/</string>
     <!-- Value from default config. -->
     <string name="generatorApp" translatable="false">bubblewrap-cli</string>
     <!-- Value from default config. -->
-    <string name="hostName" translatable="false">flow-funds-n16gmt82z-jinto-s-projects.vercel.app</string>
+    <string name="hostName" translatable="false">flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app</string>
     <!-- Value from default config. -->
-    <string name="launchUrl" translatable="false">https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app/</string>
+    <string name="launchUrl" translatable="false">https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app/</string>
     <!-- Value from default config. -->
     <string name="launcherName" translatable="false">FlowFunds</string>
     <!-- Value from default config. -->
@@ -42,6 +42,6 @@
     <!-- Value from default config. -->
     <string name="providerAuthority" translatable="false">com.jinto.flowfunds.fileprovider</string>
     <!-- Value from default config. -->
-    <string name="webManifestUrl" translatable="false">https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app/manifest.webmanifest</string>
+    <string name="webManifestUrl" translatable="false">https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app/manifest.webmanifest</string>
 
 </resources>

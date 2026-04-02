@@ -17,18 +17,18 @@
         \"relation\": [\"delegate_permission/common.handle_all_urls\"],
         \"target\": {
             \"namespace\": \"web\",
-            \"site\": \"https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app\"
+            \"site\": \"https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app\"
         }
     }]
     
   </string>
     <string name="fallbackType" translatable="false">customtabs</string>
-    <string name="fullScopeUrl" translatable="false">https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app/</string>
+    <string name="fullScopeUrl" translatable="false">https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app/</string>
     <string name="generatorApp" translatable="false">bubblewrap-cli</string>
-    <string name="hostName" translatable="false">flow-funds-n16gmt82z-jinto-s-projects.vercel.app</string>
-    <string name="launchUrl" translatable="false">https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app/</string>
+    <string name="hostName" translatable="false">flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app</string>
+    <string name="launchUrl" translatable="false">https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app/</string>
     <string name="launcherName" translatable="false">FlowFunds</string>
     <string name="orientation" translatable="false">default</string>
     <string name="providerAuthority" translatable="false">com.jinto.flowfunds.fileprovider</string>
-    <string name="webManifestUrl" translatable="false">https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app/manifest.webmanifest</string>
+    <string name="webManifestUrl" translatable="false">https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app/manifest.webmanifest</string>
 </resources>

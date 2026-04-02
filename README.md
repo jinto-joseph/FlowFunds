@@ -1,61 +1,199 @@
-# FlowFunds 💸
+# FlowFunds
 
-> Smart student expense tracker — WebGL animated, PWA-ready, ML-powered.
+FlowFunds is a student-first expense tracker built for irregular income.
+It combines a modern React dashboard, FastAPI backend, offline-first PWA behavior,
+and Android packaging support using Bubblewrap (Trusted Web Activity).
+
+## Highlights
+
+- Track income and expenses by source and payment mode
+- Live balance overview with emergency threshold alerts
+- Loan and payback tracking with prompts
+- Category and trend analytics (daily, weekly, monthly)
+- 7-day spending projection using NumPy-based forecasting
+- Installable PWA with offline fallback and push notification support
+- Android APK/AAB build flow via Bubblewrap
 
 ## Tech Stack
+
 | Layer | Stack |
 |---|---|
-| Frontend | React 18 + Vite + Tailwind + Recharts + Three.js |
-| Backend | FastAPI + SQLite + python-dotenv + numpy |
-| PWA | Vite PWA plugin + Workbox service worker |
-| Animation | Three.js WebGL particle network (mouse-interactive) |
+| Frontend | React 18, Vite, Tailwind CSS, Recharts, Three.js |
+| Backend | FastAPI, SQLite, NumPy, python-dotenv, pywebpush |
+| PWA | vite-plugin-pwa + Workbox |
+| Android wrapper | Bubblewrap (TWA) |
 
----
+## Repository Structure
+
+```text
+.
+|- backend/        # FastAPI app, DB, push notification logic
+|- frontend/       # React app, PWA config, static assets
+|- ml-model/       # Training / experimentation scripts
+|- android-twa/    # Generated Bubblewrap Android project
+|- render.yaml     # Render backend service definition
+```
+
+## Prerequisites
+
+- Node.js 20+
+- npm 10+
+- Python 3.11 (project uses `python-3.11.11`)
+- (Optional) Android packaging: JDK 17 + Android SDK + Bubblewrap CLI
 
 ## Local Development
 
-### 1. Backend
+### 1. Backend (FastAPI)
+
 ```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in VAPID keys
+cp .env.example .env
+set -a && source .env && set +a
 PYTHONPATH=$(pwd) uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Frontend
+Backend URLs:
+
+- API base: `http://127.0.0.1:8000`
+- API docs: `http://127.0.0.1:8000/docs`
+- Health check: `http://127.0.0.1:8000/health`
+
+### 2. Frontend (Vite + React)
+
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local   # set VITE_API_BASE for production
+cp .env.example .env.local
 npm run dev
 ```
 
----
+Frontend URL:
 
-## Free Hosting
+- App: `http://127.0.0.1:5173`
 
-### Backend → Render (free tier)
-1. Push repo to GitHub
-2. render.com → New Web Service → connect repo
-3. Root Dir: `backend` | Build: `pip install -r requirements.txt` | Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. Add env vars: `FRONTEND_ORIGINS`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CLAIMS`
+## Environment Variables
 
-### Frontend → Vercel (free tier)
-1. vercel.com → New Project → import repo
-2. Root Dir: `frontend` | Framework: Vite | Output: `dist`
-3. Add env var: `VITE_API_BASE=https://your-backend.onrender.com`
+### Backend (`backend/.env`)
 
----
+- `FRONTEND_ORIGINS`: comma-separated allowed origins
+- `VAPID_PUBLIC_KEY`: public push key
+- `VAPID_PRIVATE_KEY`: path to PEM or PEM content
+- `VAPID_CLAIMS`: mailto contact string
 
-## Features
-- 📊 Animated dashboard (income, expense, balance, survival days)
-- 🌐 WebGL particle constellation (mouse-interactive, balance-reactive colors)
-- 🚨 Emergency low-balance alert with survival days countdown
-- 🤖 ML 7-day spending forecast (numpy linear regression + confidence bands)
-- 📅 Day-of-week spending patterns
-- 💸 Loan/payback tracker — income prompt when debts are pending
-- 📈 Weekly & Monthly category insights (pie chart + progress bars)
-- 🔔 Web Push notifications (VAPID)
-- 📱 PWA — installable, offline support
+Generate VAPID keys (inside backend venv):
+
+```bash
+python3 -m py_vapid --gen
+python3 -m py_vapid --applicationServerKey
+```
+
+### Frontend (`frontend/.env.local`)
+
+- `VITE_API_BASE`: deployed backend URL (for production builds)
+
+## Deployment
+
+### Backend on Render
+
+This repo includes `render.yaml` configured for a web service:
+
+- Root: `backend`
+- Build: `python -m pip install --upgrade pip setuptools wheel && pip install -r requirements.txt`
+- Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Health path: `/health`
+- Persistent disk mount: `/var/data`
+
+Set these environment variables in Render:
+
+- `FRONTEND_ORIGINS`
+- `VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY`
+- `VAPID_CLAIMS`
+
+### Frontend on Vercel
+
+- Root directory: `frontend`
+- Framework preset: Vite
+- Build output: `dist`
+- Required env: `VITE_API_BASE=https://your-backend.onrender.com`
+
+The frontend config also serves Digital Asset Links at:
+
+- `/.well-known/assetlinks.json`
+
+## PWA Features
+
+- Install prompt support
+- Offline fallback page
+- Cached static assets and API responses via Workbox runtime caching
+- Web manifest and service worker generated by `vite-plugin-pwa`
+
+## Android App Build (Bubblewrap / TWA)
+
+If `android-twa/` already exists in your repo, you can rebuild directly.
+
+Build commands:
+
+```bash
+cd android-twa
+bubblewrap doctor
+bubblewrap build
+```
+
+Outputs:
+
+- `android-twa/app-release-signed.apk`
+- `android-twa/app-release-bundle.aab`
+
+Important for full-screen app mode (no browser URL bar):
+
+1. `android-twa/twa-manifest.json` host must match the deployed web host exactly.
+2. `https://<your-host>/.well-known/assetlinks.json` must return valid JSON.
+3. SHA-256 fingerprint in asset links must match the signing certificate.
+4. Rebuild and reinstall after host/fingerprint changes.
+
+## Common Scripts
+
+Frontend:
+
+```bash
+cd frontend
+npm run dev
+npm run build
+npm run preview
+```
+
+Backend:
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload --port 8000
+```
+
+## Troubleshooting
+
+- App opens with browser URL bar on Android:
+	- Check `/.well-known/assetlinks.json` is reachable and returns JSON.
+	- Confirm host in `android-twa/twa-manifest.json` matches deployed domain.
+	- Uninstall old APK and reinstall after rebuilding.
+
+- CORS issues between frontend and backend:
+	- Add your frontend URL to `FRONTEND_ORIGINS` on backend.
+
+- Push notifications not working:
+	- Verify VAPID keys and claims are configured on backend.
+
+## Contributing
+
+1. Fork the repo
+2. Create a feature branch
+3. Commit with clear messages
+4. Open a pull request with context and screenshots (if UI changes)
+
+## License
+
+Choose and add a license file (for example MIT) if you plan to open-source this repository publicly.

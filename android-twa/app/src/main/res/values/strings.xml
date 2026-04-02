@@ -34,7 +34,7 @@
         \"relation\": [\"delegate_permission/common.handle_all_urls\"],
         \"target\": {
             \"namespace\": \"web\",
-            \"site\": \"https://flow-funds-n16gmt82z-jinto-s-projects.vercel.app\"
+            \"site\": \"https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app\"
         }
     }]
     
