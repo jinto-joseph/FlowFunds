@@ -84,7 +84,7 @@ export default function AIAdvisor() {
             <h2 className="section-title">
               <span>🤖</span> AI Financial Health Report
             </h2>
-            <p className="section-subtitle">Powered by Gemini — auto-generated analysis of your finances</p>
+            <p className="section-subtitle">Auto-generated analysis of your personal finances</p>
           </div>
           <button
             type="button"
