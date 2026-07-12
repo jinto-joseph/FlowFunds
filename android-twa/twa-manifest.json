@@ -17,7 +17,7 @@
   "maskableIconUrl": "https://flow-funds-5vn4fsv6g-jinto-s-projects.vercel.app/pwa-maskable.svg",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
-    "path": "/home/jinto/Desktop/FlowFunds/android-twa/android.keystore",
+    "path": "C:\\Users\\Lenovo\\Desktop\\Career Building\\Projects\\FlowFunds\\android-twa\\android.keystore",
     "alias": "android"
   },
   "appVersionName": "3",
