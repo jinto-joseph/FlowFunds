@@ -30,8 +30,13 @@ async function apiFetch(path, options = {}) {
 
 export const api = {
   health: () => apiFetch("/health"),
+
+  // Transactions
   getTransactions: ({ limit = 120, offset = 0 } = {}) => apiFetch(`/transactions?limit=${limit}&offset=${offset}`),
   updateTransaction: (id, payload) => apiFetch(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteTransaction: (id) => apiFetch(`/transactions/${id}`, { method: "DELETE" }),
+
+  // Summary & Analytics
   getSummary: () => apiFetch("/summary"),
   getCashflowAnalytics: ({ groupBy = "month", startDate, endDate } = {}) => {
     const params = new URLSearchParams();
@@ -52,18 +57,38 @@ export const api = {
   getTodayStats: () => apiFetch("/analytics/today"),
   getTodayLedger: () => apiFetch("/analytics/today-ledger"),
   getPeriodAnalysis: (period) => apiFetch(`/analytics/period?period=${period}`),
+
+  // Loans
   getLoans: () => apiFetch("/loans"),
   addLoan: (payload) => apiFetch("/loans", { method: "POST", body: JSON.stringify(payload) }),
   updateLoan: (loanId, payload) => apiFetch(`/loans/${loanId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteLoan: (loanId) => apiFetch(`/loans/${loanId}`, { method: "DELETE" }),
+
+  // Bills
   getBills: () => apiFetch("/bills"),
   addBill: (payload) => apiFetch("/bills", { method: "POST", body: JSON.stringify(payload) }),
   updateBill: (billId, payload) => apiFetch(`/bills/${billId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBill: (billId) => apiFetch(`/bills/${billId}`, { method: "DELETE" }),
+
+  // Goals
   getGoals: () => apiFetch("/goals"),
   addGoal: (payload) => apiFetch("/goals", { method: "POST", body: JSON.stringify(payload) }),
   updateGoal: (goalId, payload) => apiFetch(`/goals/${goalId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteGoal: (goalId) => apiFetch(`/goals/${goalId}`, { method: "DELETE" }),
+
+  // Push notifications
   getPushConfig: () => apiFetch("/config/push"),
   subscribePush: (payload) => apiFetch("/push/subscribe", { method: "POST", body: JSON.stringify(payload) }),
   sendTestPush: (payload) => apiFetch("/push/send-test", { method: "POST", body: JSON.stringify(payload ?? {}) }),
+
+  // Income & Expense
   addIncome: (payload) => apiFetch("/income", { method: "POST", body: JSON.stringify(payload) }),
-  addExpense: (payload) => apiFetch("/expense", { method: "POST", body: JSON.stringify(payload) })
+  addExpense: (payload) => apiFetch("/expense", { method: "POST", body: JSON.stringify(payload) }),
+
+  // AI Advisor
+  aiChat: (message) => apiFetch("/ai/chat", { method: "POST", body: JSON.stringify({ message }) }),
+  aiAnalysis: () => apiFetch("/ai/analysis"),
+
+  // Export
+  exportCSV: () => apiFetch("/export/csv"),
 };

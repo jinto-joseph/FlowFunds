@@ -2,16 +2,26 @@ import sqlite3
 import os
 from pathlib import Path
 
-_default_db_path = Path(__file__).resolve().parents[1] / "flowfunds.db"
-DB_PATH = Path(os.getenv("FLOWFUNDS_DB_PATH", str(_default_db_path))).expanduser()
+# Resolve DB path:
+# 1. Environment variable FLOWFUNDS_DB_PATH (used on Render with persistent disk)
+# 2. Default: backend/data/flowfunds.db (stable local path that survives restarts)
+_env_db_path = os.getenv("FLOWFUNDS_DB_PATH")
+if _env_db_path:
+    DB_PATH = Path(_env_db_path).expanduser()
+else:
+    DB_PATH = Path(__file__).resolve().parents[1] / "data" / "flowfunds.db"
 
 # Ensure directory exists when using mounted/persistent paths.
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    # WAL mode for better concurrent read/write and crash resilience
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 

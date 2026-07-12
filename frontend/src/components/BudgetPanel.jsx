@@ -34,15 +34,15 @@ export default function BudgetPanel({ summary }) {
   const barColor = pct > 90 ? "bg-rose-500" : pct > 70 ? "bg-amber-400" : "bg-emerald-400";
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
+    <div className="glass-card p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="text-lg font-semibold text-white">Budget Mode</h3>
-        <div className="flex rounded-lg border border-slate-600 overflow-hidden text-sm">
+        <h3 className="section-title"><span>💳</span> Budget Mode</h3>
+        <div className="flex rounded-lg border border-slate-700/50 overflow-hidden text-sm ml-auto">
           {PERIODS.map((p) => (
             <button
               key={p}
               onClick={() => loadBudget(p)}
-              className={`px-3 py-1 capitalize ${period === p ? "bg-indigo-600 text-white" : "bg-slate-950 text-slate-300"}`}
+              className={`px-3 py-1.5 capitalize transition-all ${period === p ? "bg-violet-500/25 text-violet-200 border-violet-500/30" : "bg-slate-900/50 text-slate-400 hover:text-slate-200"}`}
             >
               {p}
             </button>
@@ -50,26 +50,23 @@ export default function BudgetPanel({ summary }) {
         </div>
         <button
           onClick={() => { setEditing(true); setInput(String(budget || "")); }}
-          className="ml-auto rounded-lg border border-slate-600 bg-slate-950 px-3 py-1 text-sm text-slate-300"
+          className="btn btn-ghost btn-xs"
         >
           Set budget
         </button>
       </div>
 
       {editing && (
-        <div className="mb-3 flex gap-2">
+        <div className="mb-3 flex gap-2 animate-scale-in">
           <input
             type="number"
             min="1"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Enter budget amount"
-            className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+            className="input flex-1"
           />
-          <button
-            onClick={saveBudget}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-white hover:bg-indigo-400"
-          >
+          <button onClick={saveBudget} className="btn btn-primary btn-sm">
             Save
           </button>
         </div>

@@ -1,49 +1,122 @@
-import { useAnimatedNumber } from "../hooks/useAnimatedNumber";
+import { useEffect, useRef, useState } from "react";
 
-export default function SummaryCards({ summary, prediction }) {
-  const balance = useAnimatedNumber(summary.balance, 800, 2);
-  const income = useAnimatedNumber(summary.total_income, 900, 2);
-  const expense = useAnimatedNumber(summary.total_expense, 900, 2);
-  const cashInHandIncome = useAnimatedNumber(summary.income_cash_in_hand ?? 0, 900, 2);
-  const bankIncome = useAnimatedNumber(summary.income_bank_account ?? 0, 900, 2);
-  const cashInHandExpense = useAnimatedNumber(summary.expense_cash_in_hand ?? 0, 900, 2);
-  const bankExpense = useAnimatedNumber(summary.expense_bank_account ?? 0, 900, 2);
+function AnimatedNumber({ value, prefix = "₹", className = "" }) {
+  const [display, setDisplay] = useState(0);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    const target = Number(value) || 0;
+    const start = display;
+    const duration = 600;
+    const startTime = performance.now();
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(start + (target - start) * eased);
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(animate);
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [value]);
 
   return (
-    <>
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card title="Current Balance" value={`₹${balance.toFixed(2)}`} tone="emerald" />
-        <Card title="Total Income" value={`₹${income.toFixed(2)}`} tone="cyan" />
-        <Card title="Total Expense" value={`₹${expense.toFixed(2)}`} tone="rose" />
-        <Card
-          title="Money lasts"
-          value={prediction.days_left || prediction.days_left === 0 ? `${prediction.days_left} days` : "--"}
-          tone="violet"
-        />
-      </section>
-
-      <section className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card title="Income: Cash in Hand" value={`₹${cashInHandIncome.toFixed(2)}`} tone="emerald" />
-        <Card title="Income: Bank Account" value={`₹${bankIncome.toFixed(2)}`} tone="cyan" />
-        <Card title="Expense: From Cash" value={`₹${cashInHandExpense.toFixed(2)}`} tone="rose" />
-        <Card title="Expense: From Bank" value={`₹${bankExpense.toFixed(2)}`} tone="violet" />
-      </section>
-    </>
+    <span className={className}>
+      {prefix}{Math.abs(display).toFixed(2)}
+    </span>
   );
 }
 
-function Card({ title, value, tone }) {
-  const toneClass = {
-    emerald: "border-emerald-400/40 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.15)]",
-    cyan: "border-cyan-400/40 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.12)]",
-    rose: "border-rose-400/40 bg-rose-500/10 shadow-[0_0_20px_rgba(244,63,94,0.12)]",
-    violet: "border-violet-400/40 bg-violet-500/10 shadow-[0_0_20px_rgba(139,92,246,0.12)]"
-  }[tone];
+export default function SummaryCards({ summary, prediction }) {
+  const cards = [
+    {
+      label: "Balance",
+      value: summary.balance,
+      color: summary.balance >= 0 ? "emerald" : "rose",
+      icon: "💰",
+      gradient: summary.balance >= 0
+        ? "from-emerald-500/15 to-cyan-500/10"
+        : "from-rose-500/15 to-amber-500/10",
+      border: summary.balance >= 0 ? "border-emerald-500/20" : "border-rose-500/20",
+      glow: summary.balance >= 0 ? "shadow-[0_0_20px_rgba(52,211,153,0.08)]" : "shadow-[0_0_20px_rgba(251,113,133,0.08)]",
+    },
+    {
+      label: "Total Income",
+      value: summary.total_income,
+      color: "cyan",
+      icon: "📥",
+      gradient: "from-cyan-500/15 to-blue-500/10",
+      border: "border-cyan-500/20",
+      glow: "shadow-[0_0_20px_rgba(34,211,238,0.08)]",
+    },
+    {
+      label: "Total Expenses",
+      value: summary.total_expense,
+      color: "rose",
+      icon: "📤",
+      gradient: "from-rose-500/15 to-pink-500/10",
+      border: "border-rose-500/20",
+      glow: "shadow-[0_0_20px_rgba(251,113,133,0.08)]",
+    },
+    {
+      label: "Survival Days",
+      value: prediction.days_left,
+      color: prediction.days_left != null && prediction.days_left <= 7 ? "amber" : "violet",
+      icon: "⏳",
+      gradient: prediction.days_left != null && prediction.days_left <= 7
+        ? "from-amber-500/15 to-orange-500/10"
+        : "from-violet-500/15 to-purple-500/10",
+      border: prediction.days_left != null && prediction.days_left <= 7 ? "border-amber-500/20" : "border-violet-500/20",
+      glow: "shadow-[0_0_20px_rgba(167,139,250,0.08)]",
+      isSurvival: true,
+    },
+  ];
+
+  const colorMap = {
+    emerald: "text-emerald-400",
+    cyan: "text-cyan-400",
+    rose: "text-rose-400",
+    amber: "text-amber-400",
+    violet: "text-violet-400",
+  };
 
   return (
-    <article className={`rounded-xl border p-4 backdrop-blur-sm sm:p-5 ${toneClass}`}>
-      <p className="text-sm uppercase tracking-wide text-slate-300">{title}</p>
-      <p className="mt-1 text-[1.7rem] font-semibold text-white tabular-nums sm:text-2xl">{value}</p>
-    </article>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 stagger-children">
+      {cards.map((card) => (
+        <div
+          key={card.label}
+          className={`glass-card bg-gradient-to-br ${card.gradient} ${card.border} ${card.glow} p-4 animate-fade-in-up`}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg">{card.icon}</span>
+            <span className="stat-label">{card.label}</span>
+          </div>
+          <div className={`stat-value ${colorMap[card.color]}`}>
+            {card.isSurvival ? (
+              card.value != null ? (
+                <span>{card.value} <span className="text-base font-medium text-slate-400">days</span></span>
+              ) : (
+                <span className="text-base text-slate-500">—</span>
+              )
+            ) : (
+              <AnimatedNumber value={card.value} className="" />
+            )}
+          </div>
+          {card.label === "Balance" && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <div className="flex gap-1 text-xs text-slate-400">
+                <span>Cash: ₹{(summary.income_cash_in_hand - summary.expense_cash_in_hand).toFixed(0)}</span>
+                <span className="text-slate-600">·</span>
+                <span>Bank: ₹{(summary.income_bank_account - summary.expense_bank_account).toFixed(0)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

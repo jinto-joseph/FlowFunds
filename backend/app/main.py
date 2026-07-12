@@ -2,6 +2,7 @@ import base64
 from datetime import date as dt_date
 from datetime import datetime, timedelta
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -320,6 +321,17 @@ def update_transaction(transaction_id: int, payload: dict) -> dict:
     return {"message": "Transaction updated"}
 
 
+@app.delete("/transactions/{transaction_id}")
+def delete_transaction(transaction_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM transactions WHERE id=?", (transaction_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        conn.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
+        conn.commit()
+    return {"message": "Transaction deleted"}
+
+
 @app.get("/loans")
 def get_loans() -> dict:
     with get_conn() as conn:
@@ -401,6 +413,17 @@ def update_loan(loan_id: int, payload: dict) -> dict:
         conn.commit()
 
     return {"message": "Loan updated", "is_paid": paid}
+
+
+@app.delete("/loans/{loan_id}")
+def delete_loan(loan_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM loans WHERE id=?", (loan_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Loan not found")
+        conn.execute("DELETE FROM loans WHERE id=?", (loan_id,))
+        conn.commit()
+    return {"message": "Loan deleted"}
 
 
 @app.get("/predict/payback-plan")
@@ -585,6 +608,17 @@ def update_bill(bill_id: int, payload: dict) -> dict:
     return {"message": "Bill updated"}
 
 
+@app.delete("/bills/{bill_id}")
+def delete_bill(bill_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM recurring_bills WHERE id=?", (bill_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Bill not found")
+        conn.execute("DELETE FROM recurring_bills WHERE id=?", (bill_id,))
+        conn.commit()
+    return {"message": "Bill deleted"}
+
+
 @app.get("/analytics/reminders")
 def get_reminders() -> dict:
     with get_conn() as conn:
@@ -760,6 +794,17 @@ def update_goal(goal_id: int, payload: dict) -> dict:
         conn.commit()
 
     return {"message": "Goal updated"}
+
+
+@app.delete("/goals/{goal_id}")
+def delete_goal(goal_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute("SELECT id FROM savings_goals WHERE id=?", (goal_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Goal not found")
+        conn.execute("DELETE FROM savings_goals WHERE id=?", (goal_id,))
+        conn.commit()
+    return {"message": "Goal deleted"}
 
 
 @app.get("/summary", response_model=Summary)
@@ -1468,3 +1513,375 @@ def send_test_push(payload: dict | None = None) -> dict:
         "failures": failures,
         "error": first_error,
     }
+
+
+# ---------------------------------------------------------------------------
+# AI Financial Advisor (Multi-provider)
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger("flowfunds.ai")
+
+
+def _gather_financial_context(conn) -> str:
+    """Build a comprehensive text summary of the user's finances for the AI."""
+    income = float(conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'"
+    ).fetchone()[0])
+    expense = float(conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'"
+    ).fetchone()[0])
+    balance = income - expense
+
+    # Recent transactions (last 30)
+    recent = conn.execute(
+        """SELECT kind, amount, COALESCE(source, category, 'N/A') as label, date, note
+           FROM transactions ORDER BY date DESC, id DESC LIMIT 30"""
+    ).fetchall()
+    recent_lines = []
+    for r in recent:
+        recent_lines.append(
+            f"  {r['date']} | {r['kind'].upper()} | ₹{float(r['amount']):.2f} | {r['label']} | {r['note'] or ''}"
+        )
+
+    # Category breakdown
+    categories = conn.execute(
+        """SELECT COALESCE(category, 'Misc') as cat, SUM(amount) as total
+           FROM transactions WHERE kind='expense'
+           GROUP BY cat ORDER BY total DESC"""
+    ).fetchall()
+    cat_lines = [f"  {c['cat']}: ₹{float(c['total']):.2f}" for c in categories]
+
+    # Loans
+    loans = conn.execute(
+        "SELECT person, amount, due_date, is_paid FROM loans ORDER BY is_paid ASC, due_date ASC"
+    ).fetchall()
+    loan_lines = []
+    outstanding_total = 0.0
+    for l in loans:
+        status = "PAID" if l["is_paid"] else "UNPAID"
+        amt = float(l["amount"])
+        if not l["is_paid"]:
+            outstanding_total += amt
+        loan_lines.append(f"  {l['person']}: ₹{amt:.2f} | Due: {l['due_date'] or 'N/A'} | {status}")
+
+    # Goals
+    goals = conn.execute(
+        "SELECT title, target_amount, current_amount, target_date, is_completed FROM savings_goals"
+    ).fetchall()
+    goal_lines = []
+    for g in goals:
+        progress = float(g["current_amount"]) / float(g["target_amount"]) * 100 if float(g["target_amount"]) > 0 else 0
+        goal_lines.append(
+            f"  {g['title']}: ₹{float(g['current_amount']):.2f}/₹{float(g['target_amount']):.2f} ({progress:.0f}%) | Target: {g['target_date'] or 'N/A'}"
+        )
+
+    # Weekly spending
+    week_expense = float(conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND date >= date('now', '-7 days')"
+    ).fetchone()[0])
+    month_expense = float(conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND date >= date('now', '-30 days')"
+    ).fetchone()[0])
+
+    # Bills
+    bills = conn.execute(
+        "SELECT name, amount, frequency, next_due_date, is_active FROM recurring_bills ORDER BY next_due_date"
+    ).fetchall()
+    bill_lines = [
+        f"  {b['name']}: ₹{float(b['amount']):.2f} {b['frequency']} | Next due: {b['next_due_date']} | {'Active' if b['is_active'] else 'Inactive'}"
+        for b in bills
+    ]
+
+    context = f"""FINANCIAL OVERVIEW (as of {datetime.utcnow().strftime('%Y-%m-%d')}):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Total Income: ₹{income:.2f}
+Total Expenses: ₹{expense:.2f}
+Current Balance: ₹{balance:.2f}
+This Week Spending: ₹{week_expense:.2f}
+This Month Spending: ₹{month_expense:.2f}
+Outstanding Loans: ₹{outstanding_total:.2f}
+Burn Rate: {((expense / income * 100) if income > 0 else 0.0):.1f}% of income spent
+
+EXPENSE CATEGORIES:
+{chr(10).join(cat_lines) if cat_lines else '  No expenses recorded yet.'}
+
+RECENT TRANSACTIONS (latest 30):
+{chr(10).join(recent_lines) if recent_lines else '  No transactions yet.'}
+
+LOANS/PAYBACKS:
+{chr(10).join(loan_lines) if loan_lines else '  No loans recorded.'}
+
+SAVINGS GOALS:
+{chr(10).join(goal_lines) if goal_lines else '  No goals set.'}
+
+RECURRING BILLS:
+{chr(10).join(bill_lines) if bill_lines else '  No recurring bills.'}
+"""
+    return context
+
+
+AI_SYSTEM_PROMPT = """You are FlowFunds AI Advisor — a friendly, expert personal finance assistant designed for students with irregular income.
+
+Your personality:
+- Warm, encouraging, but honest about financial risks
+- Use simple language, avoid jargon
+- Give specific numbers and actionable advice, not vague suggestions
+- Use ₹ (INR) for all amounts
+- Use emojis sparingly for visual appeal
+
+Your capabilities:
+- Analyze spending patterns and identify waste
+- Suggest specific savings targets based on income patterns
+- Create budget recommendations for irregular earners
+- Warn about overspending and debt risks
+- Help plan loan repayments
+- Track progress toward financial goals
+- Predict future expenses based on trends
+
+Rules:
+- Always base advice on the actual financial data provided
+- If data is insufficient, say so and suggest what to track
+- Never make up numbers — only use what's in the data
+- Keep responses concise (under 300 words unless asked for detail)
+- Format responses with clear sections using bullet points or numbered lists
+"""
+
+
+def _generate_llm_response(system_prompt: str, user_prompt: str) -> tuple[str, bool]:
+    """Generates an LLM response checking multiple backend providers (Ollama, Groq, OpenRouter, Gemini)."""
+    import urllib.request
+    import urllib.error
+    import json
+
+    # 1. Ollama Configuration (Local / Cloud Tunnel)
+    ollama_url = os.getenv("OLLAMA_BASE_URL")
+    if ollama_url:
+        ollama_url = ollama_url.rstrip("/")
+        model = os.getenv("OLLAMA_MODEL", "llama3")
+        url = f"{ollama_url}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": 0.3
+        }
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                reply = result["choices"][0]["message"]["content"]
+                return reply, True
+        except Exception as e:
+            # Fallback to standard Ollama api/chat
+            native_url = f"{ollama_url}/api/chat"
+            native_payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "stream": False,
+                "options": {"temperature": 0.3}
+            }
+            try:
+                req = urllib.request.Request(
+                    native_url,
+                    data=json.dumps(native_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    result = json.loads(resp.read().decode("utf-8"))
+                    reply = result["message"]["content"]
+                    return reply, True
+            except Exception as native_e:
+                return f"⚠️ Ollama connection failed. Base URL: {ollama_url}. Error: {str(native_e)[:200]}", True
+
+    # 2. Groq Configuration
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key:
+        model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": 0.3
+        }
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {groq_key}"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                reply = result["choices"][0]["message"]["content"]
+                return reply, True
+        except Exception as e:
+            return f"⚠️ Groq API request failed: {str(e)[:200]}", True
+
+    # 3. OpenRouter Configuration (Great for free models)
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if openrouter_key:
+        model = os.getenv("OPENROUTER_MODEL", "google/gemma-2-9b-it:free")
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": 0.3
+        }
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {openrouter_key}"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                reply = result["choices"][0]["message"]["content"]
+                return reply, True
+        except Exception as e:
+            return f"⚠️ OpenRouter API request failed: {str(e)[:200]}", True
+
+    # 4. Gemini Configuration
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            from google import genai
+            client = genai.Client(api_key=gemini_key)
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=f"{system_prompt}\n\n{user_prompt}",
+            )
+            reply = response.text or "I couldn't generate a response. Please try again."
+            return reply, True
+        except Exception as exc:
+            return f"⚠️ Gemini API request failed: {str(exc)[:200]}", True
+
+    # 5. Local Rule-Based Fallback
+    with get_conn() as conn:
+        income = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0])
+        expense = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0])
+        loans_unpaid = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM loans WHERE is_paid=0").fetchone()[0])
+
+    balance = income - expense
+    saving_ratio = ((income - expense) / income * 100) if income > 0 else 0
+
+    advice = f"""🔑 **AI Advisor is not configured yet.**
+
+To configure LLM services for your mobile phone:
+1. **Ollama (Free/Tunnel)**: Run Ollama on your PC, map it via a tunnel (e.g. `ngrok http 11434`), and set:
+   `OLLAMA_BASE_URL=https://your-tunnel-url.ngrok-free.app`
+2. **Groq (Free Cloud Llama-3)**: Set `GROQ_API_KEY=gsk_xxx`
+3. **OpenRouter (Free Cloud Models)**: Set `OPENROUTER_API_KEY=sk-or-xxx`
+4. **Gemini API**: Set `GEMINI_API_KEY=AIzaSyxxx`
+
+---
+
+### 📊 Rule-Based Quick Assessment:
+* **Current Balance**: ₹{balance:.2f}
+* **Savings Ratio**: {saving_ratio:.1f}%
+* **Unpaid Loans**: ₹{loans_unpaid:.2f}
+
+**Quick Suggestion:**
+"""
+    if balance < 0:
+        advice += "⚠️ Your balance is negative! Prioritize pausing non-essential expenses and check outstanding loans."
+    elif loans_unpaid > 0 and balance >= loans_unpaid:
+        advice += "✅ You have enough balance to pay off all outstanding loans. Clearing this debt first is highly recommended!"
+    elif saving_ratio > 20:
+        advice += "🎉 Good job! You are saving over 20% of your income. Consider allocating some of this to a savings goal."
+    else:
+        advice += "💡 Try to keep expenses under 80% of your income to build a healthy emergency savings cushion."
+
+    return advice, False
+
+
+@app.post("/ai/chat")
+def ai_chat(payload: dict) -> dict:
+    """Conversational AI financial advisor."""
+    message = (payload.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    with get_conn() as conn:
+        context = _gather_financial_context(conn)
+
+    reply, configured = _generate_llm_response(
+        system_prompt=AI_SYSTEM_PROMPT,
+        user_prompt=f"{context}\n\nUser question: {message}"
+    )
+    return {"reply": reply, "configured": configured}
+
+
+@app.get("/ai/analysis")
+def ai_auto_analysis() -> dict:
+    """Auto-generated financial analysis."""
+    with get_conn() as conn:
+        context = _gather_financial_context(conn)
+
+    prompt = f"""Generate a comprehensive but concise financial health report covering:
+1. 📊 Overall Financial Health Score (rate 1-10 with explanation)
+2. 💰 Savings Recommendation (specific monthly/weekly target)
+3. ⚠️ Top 3 Spending Concerns (with specific amounts)
+4. ✅ What They're Doing Well
+5. 📋 Action Items (3-5 specific, actionable steps)
+6. 🎯 Goal Progress Assessment
+
+Keep it under 400 words. Be specific with numbers from the data."""
+
+    analysis, configured = _generate_llm_response(
+        system_prompt=AI_SYSTEM_PROMPT,
+        user_prompt=f"{context}\n\n{prompt}"
+    )
+    return {"analysis": analysis, "configured": configured}
+
+
+# ---------------------------------------------------------------------------
+# CSV Export
+# ---------------------------------------------------------------------------
+
+@app.get("/export/csv")
+def export_csv() -> dict:
+    """Export all transactions as CSV text."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT id, kind, amount, source, income_bucket, category, date, note
+               FROM transactions ORDER BY date DESC, id DESC"""
+        ).fetchall()
+
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Type", "Amount", "Source", "Bucket", "Category", "Date", "Note"])
+    for row in rows:
+        writer.writerow([
+            row["id"], row["kind"], row["amount"], row["source"] or "",
+            row["income_bucket"] or "", row["category"] or "",
+            row["date"], row["note"] or "",
+        ])
+
+    return {"csv": output.getvalue(), "count": len(rows)}

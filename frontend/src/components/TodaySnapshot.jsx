@@ -9,8 +9,10 @@ export default function TodaySnapshot({ stats }) {
   const deltaColor = delta >= 0 ? "text-rose-300" : "text-emerald-300";
 
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
-      <h3 className="mb-3 text-lg font-semibold text-white">Today Snapshot</h3>
+    <div className="glass-card p-4 sm:p-5">
+      <h3 className="section-title mb-3">
+        <span>📸</span> Today Snapshot
+      </h3>
       <div className="grid gap-3 sm:grid-cols-2">
         <Mini title="Today" value={`₹${today.toFixed(2)}`} tone="rose" />
         <Mini title="Yesterday" value={`₹${yesterday.toFixed(2)}`} tone="cyan" />

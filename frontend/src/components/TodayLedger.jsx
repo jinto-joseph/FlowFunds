@@ -5,11 +5,11 @@ export default function TodayLedger({ ledger }) {
   const rows = ledger?.transactions ?? [];
 
   return (
-    <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
+    <section className="glass-card p-4 sm:p-5">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-white">Today Income vs Expense</h3>
-          <p className="text-sm text-slate-300">Daily basis summary with today's transactions</p>
+          <h3 className="section-title"><span>📊</span> Today Income vs Expense</h3>
+          <p className="section-subtitle">Daily basis summary with today's transactions</p>
         </div>
       </div>
 

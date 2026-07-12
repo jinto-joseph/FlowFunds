@@ -1,64 +1,118 @@
 import { useState } from "react";
 
-export default function RecurringBills({ bills = [], reminders = [], onAddBill, onMarkPaid, onToggleActive, loading }) {
+export default function RecurringBills({ bills = [], reminders = [], onAddBill, onMarkPaid, onToggleActive, onDeleteBill, loading }) {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [frequency, setFrequency] = useState("monthly");
-  const [nextDueDate, setNextDueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [nextDue, setNextDue] = useState("");
   const [note, setNote] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  async function submit(event) {
-    event.preventDefault();
-    const value = Number(amount);
-    if (!name.trim() || !Number.isFinite(value) || value <= 0) return;
-    await onAddBill({ name: name.trim(), amount: value, frequency, next_due_date: nextDueDate, note });
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const numAmt = Number(amount);
+    if (!name.trim() || numAmt <= 0) return;
+    await onAddBill({ name: name.trim(), amount: numAmt, frequency, next_due_date: nextDue || undefined, note });
     setName("");
     setAmount("");
     setNote("");
+    setNextDue("");
+    setShowForm(false);
+  }
+
+  async function confirmDelete() {
+    if (!deleteConfirmId || !onDeleteBill) return;
+    try {
+      await onDeleteBill(deleteConfirmId);
+    } catch { /* handled by parent */ }
+    setDeleteConfirmId(null);
   }
 
   return (
-    <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold text-white">Recurring Bills + Reminders</h3>
-        <p className="text-sm text-slate-300">{reminders.length} due in 7 days</p>
+    <div className="glass-card p-4 sm:p-5 animate-fade-in-up">
+      {deleteConfirmId && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirmId(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <p className="text-white font-medium mb-4">Delete this recurring bill?</p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setDeleteConfirmId(null)} className="btn btn-ghost btn-sm">Cancel</button>
+              <button type="button" onClick={confirmDelete} className="btn btn-danger btn-sm">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="section-title">
+          <span>📅</span> Recurring Bills
+        </h3>
+        <button type="button" onClick={() => setShowForm(!showForm)} className="btn btn-primary btn-xs">
+          {showForm ? "Cancel" : "+ Add Bill"}
+        </button>
       </div>
 
-      <form onSubmit={submit} className="grid gap-2 md:grid-cols-5">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Bill name" className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white" required />
-        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount" className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white" required />
-        <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white">
-          <option value="monthly">Monthly</option>
-          <option value="weekly">Weekly</option>
-        </select>
-        <input type="date" value={nextDueDate} onChange={(e) => setNextDueDate(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white" required />
-        <button type="submit" disabled={loading} className="rounded-lg bg-cyan-500/90 px-3 py-2 font-medium text-slate-900 hover:bg-cyan-400 disabled:opacity-60">Add Bill</button>
-      </form>
+      {showForm && (
+        <form onSubmit={handleSubmit} className="grid gap-2 grid-cols-1 sm:grid-cols-2 mb-4 animate-scale-in">
+          <input value={name} onChange={(e) => setName(e.target.value)} className="input" placeholder="Bill name" required />
+          <input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="input" placeholder="Amount" required />
+          <select value={frequency} onChange={(e) => setFrequency(e.target.value)} className="input">
+            <option value="monthly">Monthly</option>
+            <option value="weekly">Weekly</option>
+          </select>
+          <input type="date" value={nextDue} onChange={(e) => setNextDue(e.target.value)} className="input" />
+          <input value={note} onChange={(e) => setNote(e.target.value)} className="input sm:col-span-2" placeholder="Note (optional)" />
+          <button type="submit" disabled={loading} className="btn btn-success sm:col-span-2">Add Bill</button>
+        </form>
+      )}
 
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white" />
-
-      <ul className="mt-3 space-y-2">
-        {bills.length === 0 && <li className="text-sm text-slate-400">No recurring bills yet.</li>}
-        {bills.map((bill) => (
-          <li key={bill.id} className={`rounded-lg border px-3 py-2 ${bill.is_active ? "border-slate-700 bg-slate-950" : "border-slate-800 bg-slate-950/60 opacity-60"}`}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-white">
-                {bill.name} · <span className="text-cyan-300">₹{Number(bill.amount).toFixed(2)}</span> · {bill.frequency}
-              </p>
-              <span className={`rounded-full px-2.5 py-1 text-sm ${bill.due_soon ? "bg-amber-500/20 text-amber-300" : "bg-slate-700 text-slate-300"}`}>
-                due in {bill.days_left}d
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-slate-300">Next due: {bill.next_due_date} {bill.note ? `· ${bill.note}` : ""}</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" onClick={() => onMarkPaid(bill.id)} className="rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-200">Mark Paid</button>
-              <button type="button" onClick={() => onToggleActive(bill.id, !bill.is_active)} className="rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm text-slate-300">
-                {bill.is_active ? "Pause" : "Resume"}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+      {bills.length === 0 ? (
+        <p className="text-center py-4 text-sm text-slate-500">
+          <span className="text-2xl block mb-1">📋</span>
+          No recurring bills. Add one above.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {bills.map((bill) => (
+            <li
+              key={bill.id}
+              className={`rounded-xl border p-3 transition-all ${
+                !bill.is_active
+                  ? "border-slate-700/30 bg-slate-900/30 opacity-50"
+                  : bill.due_soon
+                    ? "border-amber-500/30 bg-amber-950/10"
+                    : "border-slate-700/30 bg-slate-900/30"
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sm text-white">{bill.name}</p>
+                    <span className="badge badge-info">{bill.frequency}</span>
+                    {bill.due_soon && <span className="badge badge-warning">Due Soon</span>}
+                  </div>
+                  <p className="text-sm text-amber-300 font-semibold mt-0.5">₹{bill.amount.toFixed(2)}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Next due: {bill.next_due_date} ({bill.days_left >= 0 ? `${bill.days_left}d left` : "overdue"})
+                  </p>
+                  {bill.note && <p className="text-xs text-slate-500 truncate">{bill.note}</p>}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onClick={() => onMarkPaid(bill.id)} disabled={loading || !bill.is_active} className="btn btn-success btn-xs">
+                    ✓ Paid
+                  </button>
+                  <button type="button" onClick={() => onToggleActive(bill.id, !bill.is_active)} className="btn btn-ghost btn-xs">
+                    {bill.is_active ? "Pause" : "Resume"}
+                  </button>
+                  <button type="button" onClick={() => setDeleteConfirmId(bill.id)} className="btn btn-danger btn-xs" title="Delete">
+                    🗑️
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

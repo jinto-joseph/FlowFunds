@@ -23,6 +23,7 @@ import AppNavbar from "./components/AppNavbar";
 import TodayLedger from "./components/TodayLedger";
 import GuideBot from "./components/GuideBot";
 import CashflowAnalytics from "./components/CashflowAnalytics";
+import AIAdvisor from "./components/AIAdvisor";
 
 const DEFAULT_SUMMARY = {
   balance: 0,
@@ -386,6 +387,16 @@ export default function App() {
     }
   }
 
+  async function handleDeleteLoan(loanId) {
+    setLoading(true);
+    try {
+      await api.deleteLoan(loanId);
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleAddBill(payload) {
     setLoading(true);
     try {
@@ -416,6 +427,16 @@ export default function App() {
     }
   }
 
+  async function handleDeleteBill(billId) {
+    setLoading(true);
+    try {
+      await api.deleteBill(billId);
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleAddGoal(payload) {
     setLoading(true);
     try {
@@ -436,6 +457,16 @@ export default function App() {
     }
   }
 
+  async function handleDeleteGoal(goalId) {
+    setLoading(true);
+    try {
+      await api.deleteGoal(goalId);
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleUpdateTransaction(transactionId, payload) {
     setLoading(true);
     try {
@@ -443,6 +474,33 @@ export default function App() {
       await refresh();
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteTransaction(transactionId) {
+    setLoading(true);
+    try {
+      await api.deleteTransaction(transactionId);
+      await refresh();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleExportCSV() {
+    try {
+      const result = await api.exportCSV();
+      if (result?.csv) {
+        const blob = new Blob([result.csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `flowfunds_transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      setError(`Export failed: ${err?.message ?? "try again."}`);
     }
   }
 
@@ -465,57 +523,75 @@ export default function App() {
         paybackReady={canPaybackNow}
         sceneMode={activePage}
       />
-      <main className="relative z-10 mx-auto min-h-screen max-w-6xl space-y-6 px-3 py-5 text-slate-100 sm:space-y-5 sm:px-4 sm:py-6">
-        <header className="space-y-2 rounded-xl border border-slate-700/50 bg-slate-950/70 p-4 backdrop-blur-sm sm:p-5">
-          <h1 className="text-2xl font-bold sm:text-3xl">FlowFunds</h1>
-          <p className="text-sm text-slate-300 sm:text-base">Smart student expense tracker for irregular income.</p>
-          <div id="guide-notification-actions" data-guide-key="notification-actions" className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:flex-wrap">
-            <button
-              type="button"
-              onClick={installApp}
-              disabled={!deferredInstallPrompt}
-              className="w-full rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            >
-              {deferredInstallPrompt ? "Install App" : "Installed / Not available"}
-            </button>
-            <button
-              type="button"
-              onClick={enableNotifications}
-              disabled={notificationPermission === "granted" || notificationPermission === "denied"}
-              className="w-full rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            >
-              {notificationPermission === "granted"
-                ? "Notifications enabled"
-                : notificationPermission === "denied"
-                  ? "Notifications blocked"
-                  : "Enable notifications"}
-            </button>
-            <button
-              type="button"
-              onClick={enablePushAlerts}
-              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 sm:w-auto"
-            >
-              Enable push alerts
-            </button>
-            <button
-              type="button"
-              onClick={sendTestPush}
-              className="w-full rounded-lg border border-violet-500/50 bg-violet-500/10 px-3 py-2 text-sm text-violet-200 sm:w-auto"
-            >
-              Send test push
-            </button>
+      <main className="relative z-10 mx-auto min-h-screen max-w-6xl space-y-4 px-3 py-4 text-slate-100 sm:space-y-5 sm:px-4 sm:py-6">
+        {/* Header */}
+        <header className="glass-card p-4 sm:p-5 animate-fade-in-up">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold sm:text-3xl gradient-text">FlowFunds</h1>
+              <p className="text-sm text-slate-400 mt-0.5">Smart finance tracker for irregular income</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="btn btn-ghost btn-sm hidden sm:flex"
+                title="Export CSV"
+              >
+                📥 Export
+              </button>
+              <button
+                type="button"
+                onClick={installApp}
+                disabled={!deferredInstallPrompt}
+                className="btn btn-primary btn-sm"
+              >
+                {deferredInstallPrompt ? "📱 Install" : "Installed"}
+              </button>
+            </div>
           </div>
-          <p className="pt-2 text-sm text-slate-300">{pushStatus}</p>
+
+          {/* Notification actions — collapsible on mobile */}
+          <details className="mt-3">
+            <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-300 transition-colors">
+              🔔 Notification Settings
+            </summary>
+            <div id="guide-notification-actions" data-guide-key="notification-actions" className="grid grid-cols-1 gap-2 pt-2 sm:flex sm:flex-wrap">
+              <button
+                type="button"
+                onClick={enableNotifications}
+                disabled={notificationPermission === "granted" || notificationPermission === "denied"}
+                className="btn btn-ghost btn-sm"
+              >
+                {notificationPermission === "granted"
+                  ? "✅ Notifications enabled"
+                  : notificationPermission === "denied"
+                    ? "❌ Notifications blocked"
+                    : "🔔 Enable notifications"}
+              </button>
+              <button type="button" onClick={enablePushAlerts} className="btn btn-ghost btn-sm">
+                📡 Enable push alerts
+              </button>
+              <button type="button" onClick={sendTestPush} className="btn btn-ghost btn-sm">
+                🧪 Send test push
+              </button>
+            </div>
+            <p className="pt-1 text-xs text-slate-500">{pushStatus}</p>
+          </details>
         </header>
 
         <div id="guide-navbar" data-guide-key="navbar">
           <AppNavbar activePage={activePage} onChange={setActivePage} />
         </div>
 
-        {error && <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-200">{error}</p>}
+        {error && (
+          <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200 animate-fade-in flex items-center gap-2">
+            <span>⚠️</span> {error}
+          </div>
+        )}
 
         {activePage === "dashboard" && (
-          <>
+          <div className="space-y-4 sm:space-y-5">
             <div id="guide-summary-cards" data-guide-key="summary-cards">
               <SummaryCards summary={summary} prediction={prediction} />
             </div>
@@ -526,19 +602,19 @@ export default function App() {
                 <TransactionForm mode="expense" onSubmit={handleExpense} loading={loading} />
               </section>
             </div>
-            <section data-guide-key="budget-panel" className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur-sm">
+            <section data-guide-key="budget-panel" className="glass-card p-4">
               <div className="flex flex-wrap items-center gap-3">
-                <p className="font-medium">Low balance threshold</p>
+                <p className="font-medium text-sm">⚡ Low balance threshold</p>
                 <input
                   type="number"
                   min="0"
                   value={threshold}
                   onChange={(e) => setThreshold(Number(e.target.value || 0))}
-                  className="w-36 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-white"
+                  className="input w-32"
                 />
               </div>
               {lowBalance && (
-                <p className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 p-2 text-rose-200">
+                <p className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-2 text-sm text-rose-200 animate-pulse-glow">
                   ⚠️ Warning: balance is below your threshold. Spend only in emergency condition.
                 </p>
               )}
@@ -558,13 +634,13 @@ export default function App() {
             <div data-guide-key="financial-coach">
               <FinancialCoach health={financialHealth} onOpenPayback={() => setShowPaybackPrompt(true)} />
             </div>
-          </>
+          </div>
         )}
 
         {activePage === "loans" && (
-          <>
+          <div className="space-y-4 sm:space-y-5">
             {summary.balance < 0 && (
-              <div className="rounded-xl border-2 border-red-500/70 bg-red-950/30 p-4">
+              <div className="glass-card border-red-500/30 p-4 animate-fade-in-up">
                 <div className="flex items-start gap-3">
                   <span className="text-2xl">🔴</span>
                   <div>
@@ -578,7 +654,7 @@ export default function App() {
               </div>
             )}
             {hasUnpaidLoans && (
-              <div className="rounded-xl border-2 border-amber-500/60 bg-amber-950/30 p-4">
+              <div className="glass-card border-amber-500/30 p-4 animate-fade-in-up">
                 <p className="font-bold text-amber-300">Unpaid Paybacks Remaining</p>
                 <p className="text-sm text-amber-200 mt-1">
                   You still owe <span className="font-bold">₹{outstandingLoanTotal.toFixed(2)}</span> to {loans.filter((l) => !l.is_paid).length} person(s).
@@ -586,7 +662,7 @@ export default function App() {
               </div>
             )}
             {canPaybackNow && (
-              <div className="rounded-xl border-2 border-emerald-500/60 bg-emerald-950/30 p-4">
+              <div className="glass-card border-emerald-500/30 p-4 animate-fade-in-up">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="font-bold text-emerald-300">Great news: You can clear your loans now</p>
@@ -597,7 +673,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setShowPaybackPrompt(true)}
-                    className="rounded-lg border border-emerald-400/60 bg-emerald-500/20 px-3 py-2 text-sm text-emerald-100"
+                    className="btn btn-success btn-sm"
                   >
                     Open Payback Checklist
                   </button>
@@ -611,6 +687,7 @@ export default function App() {
                 balance={summary.balance}
                 onAddLoan={handleAddLoan}
                 onTogglePaid={handleToggleLoanPaid}
+                onDeleteLoan={handleDeleteLoan}
                 loading={loading}
               />
             </div>
@@ -625,29 +702,31 @@ export default function App() {
                   onAddBill={handleAddBill}
                   onMarkPaid={handleMarkBillPaid}
                   onToggleActive={handleToggleBillActive}
+                  onDeleteBill={handleDeleteBill}
                   loading={loading}
                 />
               </div>
             </section>
             {(reminders.upcoming_bills?.length > 0 || reminders.upcoming_loans?.length > 0) && (
-              <section className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">
-                <p className="font-medium">Upcoming reminders (next 7 days)</p>
-                <p className="text-sm mt-1">
+              <section className="glass-card border-amber-500/20 p-3 text-amber-100">
+                <p className="font-medium text-sm">🔔 Upcoming reminders (next 7 days)</p>
+                <p className="text-xs mt-1 text-amber-200/80">
                   Bills due: {reminders.upcoming_bills?.length ?? 0} · Loan dues: {reminders.upcoming_loans?.length ?? 0}
                 </p>
               </section>
             )}
-          </>
+          </div>
         )}
 
         {activePage === "goals" && (
-          <>
+          <div className="space-y-4 sm:space-y-5">
             <div id="guide-goal-tracker" data-guide-key="goal-tracker">
               <GoalTracker
                 goals={goals}
                 avgDailySavings={avgDailySavings}
                 onAddGoal={handleAddGoal}
                 onAddProgress={handleAddGoalProgress}
+                onDeleteGoal={handleDeleteGoal}
                 loading={loading}
               />
             </div>
@@ -659,11 +738,11 @@ export default function App() {
               forecast={forecastData.forecast}
               trend={forecastData.trend}
             />
-          </>
+          </div>
         )}
 
         {activePage === "analytics" && (
-          <>
+          <div className="space-y-4 sm:space-y-5">
             <CashflowAnalytics
               data={cashflowData}
               filters={cashflowFilters}
@@ -689,11 +768,16 @@ export default function App() {
                 <TransactionsList
                   transactions={transactions}
                   onUpdateTransaction={handleUpdateTransaction}
+                  onDeleteTransaction={handleDeleteTransaction}
                   loading={loading}
                 />
               </div>
             </section>
-          </>
+          </div>
+        )}
+
+        {activePage === "ai" && (
+          <AIAdvisor />
         )}
 
         {activePage === "insights" && (

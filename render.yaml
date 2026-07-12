@@ -22,4 +22,6 @@ services:
         sync: false
       - key: VAPID_CLAIMS
         value: mailto:admin@flowfunds.app
+      - key: GEMINI_API_KEY
+        sync: false          # Get from https://aistudio.google.com/apikey
     healthCheckPath: /health

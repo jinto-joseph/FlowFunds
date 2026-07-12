@@ -11,6 +11,7 @@ backend/.pytest_cache
 
 # Data — never commit the live database
 backend/flowfunds.db
+backend/data/
 
 # OS
 .DS_Store
