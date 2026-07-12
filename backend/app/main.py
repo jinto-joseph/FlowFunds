@@ -10,7 +10,7 @@ import re
 from dotenv import load_dotenv
 
 # Load .env from the backend directory (parent of app/)
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -1723,7 +1723,8 @@ def _generate_llm_response(system_prompt: str, user_prompt: str) -> tuple[str, b
                 data=json.dumps(payload).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {groq_key}"
+                    "Authorization": f"Bearer {groq_key}",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                 },
                 method="POST"
             )
@@ -1753,7 +1754,8 @@ def _generate_llm_response(system_prompt: str, user_prompt: str) -> tuple[str, b
                 data=json.dumps(payload).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {openrouter_key}"
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                 },
                 method="POST"
             )
