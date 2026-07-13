@@ -111,13 +111,13 @@ export default function App() {
   const [financialHealth, setFinancialHealth] = useState(() => getCachedState("financialHealth", {}));
   const [paybackPlan, setPaybackPlan] = useState(() => getCachedState("paybackPlan", { plan: [] }));
   const [bills, setBills] = useState(() => getCachedState("bills", []));
-  const [goals, setGoals] = useState(() => getCachedState("goalsData", {}).goals ?? []);
-  const [avgDailySavings, setAvgDailySavings] = useState(() => Number(getCachedState("goalsData", {}).avg_daily_savings ?? 0));
+  const [goals, setGoals] = useState(() => getCachedState("goalsData", {})?.goals ?? []);
+  const [avgDailySavings, setAvgDailySavings] = useState(() => Number(getCachedState("goalsData", {})?.avg_daily_savings ?? 0));
   const [reminders, setReminders] = useState(() => getCachedState("reminders", { upcoming_bills: [], upcoming_loans: [] }));
-  const [loans, setLoans] = useState(() => getCachedState("loansData", {}).loans ?? []);
-  const [outstandingLoanTotal, setOutstandingLoanTotal] = useState(() => Number(getCachedState("loansData", {}).outstanding_total ?? 0));
-  const [weeklyAnalysis, setWeeklyAnalysis] = useState(() => getCachedState("weeklyAnalysis", { categories: [], daily: [] }));
-  const [monthlyAnalysis, setMonthlyAnalysis] = useState(() => getCachedState("monthlyAnalysis", { categories: [], daily: [] }));
+  const [loans, setLoans] = useState(() => getCachedState("loansData", {})?.loans ?? []);
+  const [outstandingLoanTotal, setOutstandingLoanTotal] = useState(() => Number(getCachedState("loansData", {})?.outstanding_total ?? 0));
+  const [weeklyAnalysis, setWeeklyAnalysis] = useState(() => getCachedState("weeklyAnalysis", {}) || { categories: [], daily: [] });
+  const [monthlyAnalysis, setMonthlyAnalysis] = useState(() => getCachedState("monthlyAnalysis", {}) || { categories: [], daily: [] });
   const [activePage, setActivePage] = useState(() => localStorage.getItem("flowfunds_active_page") || "dashboard");
   const [showPaybackPrompt, setShowPaybackPrompt] = useState(false);
   const [cashflowFilters, setCashflowFilters] = useState({
@@ -219,8 +219,8 @@ export default function App() {
         setOutstandingLoanTotal(Number(d.outstanding_total ?? 0));
         return d;
       }, "loansData"),
-      fetchAndCache(() => api.getPeriodAnalysis("weekly"), (d) => d ?? { categories: [], daily: [] }, "weeklyAnalysis"),
-      fetchAndCache(() => api.getPeriodAnalysis("monthly"), (d) => d ?? { categories: [], daily: [] }, "monthlyAnalysis"),
+      fetchAndCache(() => api.getPeriodAnalysis("weekly"), setWeeklyAnalysis, "weeklyAnalysis", (d) => d ?? { categories: [], daily: [] }),
+      fetchAndCache(() => api.getPeriodAnalysis("monthly"), setMonthlyAnalysis, "monthlyAnalysis", (d) => d ?? { categories: [], daily: [] }),
     ];
 
     const results = await Promise.all(tasks);

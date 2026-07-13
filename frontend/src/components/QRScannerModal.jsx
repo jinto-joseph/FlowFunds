@@ -75,11 +75,10 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
       .scanFile(file, true)
       .then((decodedText) => {
         handleDecodedText(decodedText);
-        html5QrCode.clear();
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("QR image scan error:", err);
         setError("Could not read QR code from image. Please try a clearer image.");
-        html5QrCode.clear();
       });
   }
 
