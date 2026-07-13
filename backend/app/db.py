@@ -64,6 +64,13 @@ def get_conn():
     turso_token = os.getenv("TURSO_AUTH_TOKEN")
 
     if turso_url:
+        # Convert libsql:// or wss:// to https:// to use HTTP protocol instead of WebSockets,
+        # bypassing WebSocket handshake upgrades (which often get blocked or fail on Render).
+        if turso_url.startswith("libsql://"):
+            turso_url = turso_url.replace("libsql://", "https://", 1)
+        elif turso_url.startswith("wss://"):
+            turso_url = turso_url.replace("wss://", "https://", 1)
+
         try:
             import libsql_client
             client = libsql_client.create_client_sync(turso_url, auth_token=turso_token)
