@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 export default function PaybackPromptModal({ loans = [], outstandingTotal = 0, onConfirm, onSkip }) {
-  const unpaid = loans.filter((l) => !l.is_paid);
+  const unpaid = (loans || []).filter((l) => !l.is_paid);
   const [checked, setChecked] = useState({});
 
   function toggle(id) {

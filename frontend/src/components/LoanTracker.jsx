@@ -10,7 +10,7 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [settleLoan, setSettleLoan] = useState(null);
 
-  const unpaidCount = useMemo(() => loans.filter((l) => !l.is_paid).length, [loans]);
+  const unpaidCount = useMemo(() => (loans || []).filter((l) => !l.is_paid).length, [loans]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -99,13 +99,13 @@ export default function LoanTracker({ loans = [], outstandingTotal = 0, balance 
       )}
 
       <ul className="mt-4 space-y-2">
-        {loans.length === 0 && (
+        {(loans || []).length === 0 && (
           <li className="text-center py-6 text-sm text-slate-500">
             <span className="text-2xl block mb-1">📝</span>
             No loan entries yet.
           </li>
         )}
-        {loans.map((loan) => (
+        {(loans || []).map((loan) => (
           <li
             key={loan.id}
             className={`flex flex-col gap-3 rounded-xl border p-3 transition-all duration-200 ${

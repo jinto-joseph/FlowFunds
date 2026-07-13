@@ -6,6 +6,7 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef(null);
   const scannerInstanceRef = useRef(null);
+  const fileScannerRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -70,16 +71,23 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
       return;
     }
 
-    const html5QrCode = new window.Html5Qrcode("qr-reader-file");
-    html5QrCode
-      .scanFile(file, true)
-      .then((decodedText) => {
-        handleDecodedText(decodedText);
-      })
-      .catch((err) => {
-        console.error("QR image scan error:", err);
-        setError("Could not read QR code from image. Please try a clearer image.");
-      });
+    try {
+      if (!fileScannerRef.current) {
+        fileScannerRef.current = new window.Html5Qrcode("qr-reader-file");
+      }
+      fileScannerRef.current
+        .scanFile(file, true)
+        .then((decodedText) => {
+          handleDecodedText(decodedText);
+        })
+        .catch((err) => {
+          console.error("QR image scan error:", err);
+          setError("Could not read QR code from image. Please try a clearer image.");
+        });
+    } catch (err) {
+      console.error("QR file scanner instance error:", err);
+      setError("Error initializing scanner. Please try again.");
+    }
   }
 
   function handleDecodedText(text) {
@@ -166,33 +174,33 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
           </div>
         )}
 
-        {mode === "camera" ? (
-          <div>
-            <div
-              id="qr-reader"
-              ref={scannerRef}
-              className="w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-700/50"
-              style={{ minHeight: "280px" }}
+        {/* Camera Scanner */}
+        <div style={{ display: mode === "camera" ? "block" : "none" }}>
+          <div
+            id="qr-reader"
+            ref={scannerRef}
+            className="w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-700/50"
+            style={{ minHeight: "280px" }}
+          />
+          <p className="text-xs text-slate-500 text-center mt-3">
+            Point your camera at a UPI QR code
+          </p>
+        </div>
+
+        {/* File Scanner */}
+        <div style={{ display: mode === "file" ? "block" : "none" }}>
+          <div id="qr-reader-file" style={{ display: "none" }} />
+          <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-600 rounded-xl cursor-pointer hover:border-primary/50 transition-all bg-slate-900/50">
+            <span className="text-3xl mb-2">📁</span>
+            <span className="text-sm text-slate-400">Click to upload a QR code image</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleFileUpload}
+              className="hidden"
             />
-            <p className="text-xs text-slate-500 text-center mt-3">
-              Point your camera at a UPI QR code
-            </p>
-          </div>
-        ) : (
-          <div>
-            <div id="qr-reader-file" style={{ display: "none" }} />
-            <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-600 rounded-xl cursor-pointer hover:border-primary/50 transition-all bg-slate-900/50">
-              <span className="text-3xl mb-2">📁</span>
-              <span className="text-sm text-slate-400">Click to upload a QR code image</span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
-          </div>
-        )}
+          </label>
+        </div>
       </div>
     </div>
   );
