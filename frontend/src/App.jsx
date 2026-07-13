@@ -118,7 +118,7 @@ export default function App() {
   const [outstandingLoanTotal, setOutstandingLoanTotal] = useState(() => Number(getCachedState("loansData", {}).outstanding_total ?? 0));
   const [weeklyAnalysis, setWeeklyAnalysis] = useState(() => getCachedState("weeklyAnalysis", { categories: [], daily: [] }));
   const [monthlyAnalysis, setMonthlyAnalysis] = useState(() => getCachedState("monthlyAnalysis", { categories: [], daily: [] }));
-  const [activePage, setActivePage] = useState("dashboard");
+  const [activePage, setActivePage] = useState(() => localStorage.getItem("flowfunds_active_page") || "dashboard");
   const [showPaybackPrompt, setShowPaybackPrompt] = useState(false);
   const [cashflowFilters, setCashflowFilters] = useState({
     groupBy: "month",
@@ -261,6 +261,14 @@ export default function App() {
       // Ignore storage failures on restricted/private mobile browsers.
     }
   }, [threshold]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("flowfunds_active_page", activePage);
+    } catch {
+      // Ignore storage failures
+    }
+  }, [activePage]);
 
   useEffect(() => {
     function onBeforeInstallPrompt(event) {
@@ -622,12 +630,12 @@ export default function App() {
       <main className="relative z-10 mx-auto min-h-screen max-w-6xl space-y-4 px-3 py-4 text-slate-100 sm:space-y-5 sm:px-4 sm:py-6">
         {/* Header */}
         <header className="glass-card p-4 sm:p-5 animate-fade-in-up">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-bold sm:text-3xl gradient-text">FlowFunds</h1>
               <p className="text-sm text-slate-400 mt-0.5">Smart finance tracker for irregular income</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-400 hidden sm:inline mr-2">{userEmail}</span>
               <button
                 type="button"
@@ -645,14 +653,15 @@ export default function App() {
               >
                 📥 Export
               </button>
-              <button
-                type="button"
-                onClick={installApp}
-                disabled={!deferredInstallPrompt}
-                className="btn btn-primary btn-sm"
-              >
-                {deferredInstallPrompt ? "📱 Install" : "Installed"}
-              </button>
+              {deferredInstallPrompt && (
+                <button
+                  type="button"
+                  onClick={installApp}
+                  className="btn btn-primary btn-sm animate-pulse-glow"
+                >
+                  📱 Install App
+                </button>
+              )}
             </div>
           </div>
 
