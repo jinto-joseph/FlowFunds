@@ -17,8 +17,17 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 class LibsqlCursorWrapper:
     def __init__(self, result_set):
+        self.result_set = result_set
         self.rows = result_set.rows
         self._idx = 0
+
+    @property
+    def lastrowid(self):
+        return self.result_set.last_insert_rowid
+
+    @property
+    def rowcount(self):
+        return self.result_set.rows_affected
 
     def fetchall(self):
         return self.rows
