@@ -193,7 +193,7 @@ def init_db() -> None:
         for table in ["transactions", "push_subscriptions", "loans", "recurring_bills", "savings_goals"]:
             columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
             if "user_id" not in columns:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE")
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
 
         # 2. Add upi_id column to loans if missing
         loan_columns = {row["name"] for row in conn.execute("PRAGMA table_info(loans)").fetchall()}
