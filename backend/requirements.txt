@@ -5,3 +5,4 @@ pywebpush==2.0.3
 python-dotenv==1.1.0
 numpy==2.2.4
 google-genai>=1.0
+libsql-client>=0.3.0

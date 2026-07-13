@@ -15,10 +15,65 @@ else:
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def get_conn() -> sqlite3.Connection:
+class LibsqlCursorWrapper:
+    def __init__(self, result_set):
+        self.rows = result_set.rows
+        self._idx = 0
+
+    def fetchall(self):
+        return self.rows
+
+    def fetchone(self):
+        if self._idx < len(self.rows):
+            row = self.rows[self._idx]
+            self._idx += 1
+            return row
+        return None
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class LibsqlConnectionWrapper:
+    def __init__(self, client):
+        self.client = client
+
+    def execute(self, sql, params=None):
+        p = list(params) if params is not None else []
+        res = self.client.execute(sql, p)
+        return LibsqlCursorWrapper(res)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+    def close(self):
+        self.client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+def get_conn():
+    turso_url = os.getenv("TURSO_DATABASE_URL")
+    turso_token = os.getenv("TURSO_AUTH_TOKEN")
+
+    if turso_url:
+        try:
+            import libsql_client
+            client = libsql_client.create_client_sync(turso_url, auth_token=turso_token)
+            return LibsqlConnectionWrapper(client)
+        except ImportError:
+            # Fallback to local SQLite if package not installed
+            pass
+
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
-    # WAL mode for better concurrent read/write and crash resilience
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -99,14 +154,18 @@ def init_db() -> None:
             """
         )
 
-        # Migration-safe: add due_date column if older DB was created before this field existed.
-        loan_columns = {row["name"] for row in conn.execute("PRAGMA table_info(loans)").fetchall()}
-        if "due_date" not in loan_columns:
-            conn.execute("ALTER TABLE loans ADD COLUMN due_date TEXT")
+        # Migration-safe: add due_date / income_bucket column checking.
+        # Skip checking PRAGMAs for remote Libsql/Turso since Turso databases
+        # are created fresh with all modern schemas.
+        # Otherwise, perform standard local checks.
+        turso_url = os.getenv("TURSO_DATABASE_URL")
+        if not turso_url:
+            loan_columns = {row["name"] for row in conn.execute("PRAGMA table_info(loans)").fetchall()}
+            if "due_date" not in loan_columns:
+                conn.execute("ALTER TABLE loans ADD COLUMN due_date TEXT")
 
-        # Migration-safe: add income_bucket to older transactions tables.
-        tx_columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
-        if "income_bucket" not in tx_columns:
-            conn.execute("ALTER TABLE transactions ADD COLUMN income_bucket TEXT")
+            tx_columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
+            if "income_bucket" not in tx_columns:
+                conn.execute("ALTER TABLE transactions ADD COLUMN income_bucket TEXT")
 
         conn.commit()
