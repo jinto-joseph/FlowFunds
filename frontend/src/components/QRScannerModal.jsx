@@ -1,23 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 
 export default function QRScannerModal({ isOpen, onClose, onScanned }) {
-  const [mode, setMode] = useState("camera"); // "camera" | "file"
   const [error, setError] = useState("");
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef(null);
   const scannerInstanceRef = useRef(null);
-  const fileScannerRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) {
       stopScanner();
       return;
     }
-    if (mode === "camera") {
-      startCameraScanner();
-    }
+    startCameraScanner();
     return () => stopScanner();
-  }, [isOpen, mode]);
+  }, [isOpen]);
 
   function stopScanner() {
     if (scannerInstanceRef.current) {
@@ -55,38 +51,8 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
         () => {} // ignore scan failures
       );
     } catch (err) {
-      setError("Camera access denied or unavailable. Try uploading an image instead.");
+      setError("Camera access denied or unavailable.");
       setScanning(false);
-      setMode("file");
-    }
-  }
-
-  function handleFileUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError("");
-
-    if (typeof window.Html5Qrcode === "undefined") {
-      setError("QR scanner library not loaded.");
-      return;
-    }
-
-    try {
-      if (!fileScannerRef.current) {
-        fileScannerRef.current = new window.Html5Qrcode("qr-reader-file");
-      }
-      fileScannerRef.current
-        .scanFile(file, true)
-        .then((decodedText) => {
-          handleDecodedText(decodedText);
-        })
-        .catch((err) => {
-          console.error("QR image scan error:", err);
-          setError("Could not read QR code from image. Please try a clearer image.");
-        });
-    } catch (err) {
-      console.error("QR file scanner instance error:", err);
-      setError("Error initializing scanner. Please try again.");
     }
   }
 
@@ -103,13 +69,15 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
 
   function parseUpiUri(text) {
     if (!text) return null;
-    // Match both upi://pay? and just upi://pay (some QRs use lowercase)
     const lower = text.toLowerCase();
     if (!lower.startsWith("upi://pay")) return null;
 
     try {
-      const url = new URL(text.replace(/^upi:\/\//i, "https://upi.placeholder/"));
-      const params = url.searchParams;
+      const queryIdx = text.indexOf("?");
+      if (queryIdx === -1) return null;
+      const queryString = text.slice(queryIdx + 1);
+      
+      const params = new URLSearchParams(queryString);
       return {
         upiId: params.get("pa") || "",
         payeeName: params.get("pn") || "",
@@ -141,32 +109,6 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
           <span>Scan UPI QR Code</span>
         </h3>
 
-        {/* Mode toggle */}
-        <div className="flex gap-2 mb-4">
-          <button
-            type="button"
-            onClick={() => setMode("camera")}
-            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-              mode === "camera"
-                ? "bg-primary/20 border border-primary/40 text-primary"
-                : "bg-slate-800/50 border border-slate-700/50 text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            📹 Camera
-          </button>
-          <button
-            type="button"
-            onClick={() => { stopScanner(); setMode("file"); }}
-            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-              mode === "file"
-                ? "bg-primary/20 border border-primary/40 text-primary"
-                : "bg-slate-800/50 border border-slate-700/50 text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            🖼️ Upload Image
-          </button>
-        </div>
-
         {error && (
           <div className="p-3 mb-4 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm flex items-center gap-2">
             <span>⚠️</span>
@@ -175,7 +117,7 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
         )}
 
         {/* Camera Scanner */}
-        <div style={{ display: mode === "camera" ? "block" : "none" }}>
+        <div>
           <div
             id="qr-reader"
             ref={scannerRef}
@@ -185,21 +127,6 @@ export default function QRScannerModal({ isOpen, onClose, onScanned }) {
           <p className="text-xs text-slate-500 text-center mt-3">
             Point your camera at a UPI QR code
           </p>
-        </div>
-
-        {/* File Scanner */}
-        <div style={{ display: mode === "file" ? "block" : "none" }}>
-          <div id="qr-reader-file" style={{ display: "none" }} />
-          <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-600 rounded-xl cursor-pointer hover:border-primary/50 transition-all bg-slate-900/50">
-            <span className="text-3xl mb-2">📁</span>
-            <span className="text-sm text-slate-400">Click to upload a QR code image</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
         </div>
       </div>
     </div>

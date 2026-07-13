@@ -917,7 +917,7 @@ export default function App() {
           setShowQRScanner(false);
           // Launch UPI deep link for payment
           if (data.rawUri) {
-            window.open(data.rawUri, "_blank");
+            window.location.href = data.rawUri;
           }
           // Switch to dashboard if not already there
           setActivePage("dashboard");
