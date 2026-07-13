@@ -98,10 +98,23 @@ def get_conn():
 
 def init_db() -> None:
     with get_conn() as conn:
+        # Create users table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
                 kind TEXT NOT NULL CHECK(kind IN ('income','expense')),
                 amount REAL NOT NULL,
                 source TEXT,
@@ -116,6 +129,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
                 endpoint TEXT NOT NULL UNIQUE,
                 p256dh TEXT NOT NULL,
                 auth TEXT NOT NULL,
@@ -127,11 +141,13 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS loans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
                 person TEXT NOT NULL,
                 amount REAL NOT NULL,
                 note TEXT DEFAULT '',
                 borrowed_date TEXT NOT NULL,
                 due_date TEXT,
+                upi_id TEXT,
                 is_paid INTEGER NOT NULL DEFAULT 0,
                 paid_date TEXT
             )
@@ -142,6 +158,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS recurring_bills (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
                 name TEXT NOT NULL,
                 amount REAL NOT NULL,
                 frequency TEXT NOT NULL CHECK(frequency IN ('weekly','monthly')),
@@ -158,6 +175,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS savings_goals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
                 target_amount REAL NOT NULL,
                 current_amount REAL NOT NULL DEFAULT 0,
@@ -170,18 +188,24 @@ def init_db() -> None:
             """
         )
 
-        # Migration-safe: add due_date / income_bucket column checking.
-        # Skip checking PRAGMAs for remote Libsql/Turso since Turso databases
-        # are created fresh with all modern schemas.
-        # Otherwise, perform standard local checks.
-        turso_url = os.getenv("TURSO_DATABASE_URL")
-        if not turso_url:
-            loan_columns = {row["name"] for row in conn.execute("PRAGMA table_info(loans)").fetchall()}
-            if "due_date" not in loan_columns:
-                conn.execute("ALTER TABLE loans ADD COLUMN due_date TEXT")
+        # Migration logic (safe for both SQLite and Turso DBs)
+        # 1. Add user_id column if it doesn't exist
+        for table in ["transactions", "push_subscriptions", "loans", "recurring_bills", "savings_goals"]:
+            columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "user_id" not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE")
 
-            tx_columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
-            if "income_bucket" not in tx_columns:
-                conn.execute("ALTER TABLE transactions ADD COLUMN income_bucket TEXT")
+        # 2. Add upi_id column to loans if missing
+        loan_columns = {row["name"] for row in conn.execute("PRAGMA table_info(loans)").fetchall()}
+        if "upi_id" not in loan_columns:
+            conn.execute("ALTER TABLE loans ADD COLUMN upi_id TEXT")
+
+        if "due_date" not in loan_columns:
+            conn.execute("ALTER TABLE loans ADD COLUMN due_date TEXT")
+
+        # 3. Add income_bucket column to transactions if missing
+        tx_columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)").fetchall()}
+        if "income_bucket" not in tx_columns:
+            conn.execute("ALTER TABLE transactions ADD COLUMN income_bucket TEXT")
 
         conn.commit()

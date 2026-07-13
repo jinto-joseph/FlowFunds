@@ -4,6 +4,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class UserAuth(BaseModel):
+    email: str
+    password: str
+
+
 class IncomeCreate(BaseModel):
     amount: float = Field(gt=0)
     source: str = "Other"

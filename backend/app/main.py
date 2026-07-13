@@ -12,12 +12,13 @@ from dotenv import load_dotenv
 # Load .env from the backend directory (parent of app/)
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pywebpush import WebPushException, webpush
 
 from .db import get_conn, init_db
-from .schemas import ExpenseCreate, IncomeCreate, Summary
+from .schemas import ExpenseCreate, IncomeCreate, Summary, UserAuth
 
 
 def resolve_allowed_origins() -> list[str]:
@@ -159,6 +160,77 @@ def roll_due_date_forward(due: dt_date, frequency: str, today: dt_date) -> dt_da
         next_due = add_frequency_days(next_due, frequency)
     return next_due
 
+import hashlib
+import secrets
+import hmac
+import base64
+
+JWT_SECRET = os.getenv("JWT_SECRET", "flowfunds_super_secret_default_key_123_456_789!")
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000)
+    return f"{salt}:{key.hex()}"
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    try:
+        salt, key_hex = hashed_password.split(":", 1)
+        key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000)
+        return secrets.compare_digest(key.hex(), key_hex)
+    except Exception:
+        return False
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(days=30)
+    to_encode.update({"exp": expire.timestamp()})
+    
+    payload_bytes = json.dumps(to_encode).encode("utf-8")
+    payload_b64 = base64.urlsafe_b64encode(payload_bytes).decode("utf-8").replace("=", "")
+    
+    sig = hmac.new(JWT_SECRET.encode("utf-8"), payload_b64.encode("utf-8"), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode("utf-8").replace("=", "")
+    
+    return f"{payload_b64}.{sig_b64}"
+
+def decode_access_token(token: str) -> dict | None:
+    try:
+        parts = token.split(".")
+        if len(parts) != 2:
+            return None
+        payload_b64, sig_b64 = parts
+        
+        expected_sig = hmac.new(JWT_SECRET.encode("utf-8"), payload_b64.encode("utf-8"), hashlib.sha256).digest()
+        expected_sig_b64 = base64.urlsafe_b64encode(expected_sig).decode("utf-8").replace("=", "")
+        
+        if not secrets.compare_digest(sig_b64, expected_sig_b64):
+            return None
+            
+        rem = len(payload_b64) % 4
+        if rem > 0:
+            payload_b64 += "=" * (4 - rem)
+        payload_bytes = base64.urlsafe_b64decode(payload_b64.encode("utf-8"))
+        payload = json.loads(payload_bytes.decode("utf-8"))
+        
+        if payload.get("exp") and datetime.utcnow().timestamp() > payload["exp"]:
+            return None
+            
+        return payload
+    except Exception:
+        return None
+
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> int:
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    if not payload or "user_id" not in payload:
+        raise HTTPException(status_code=401, detail="Invalid token or expired session")
+    return payload["user_id"]
+
 app = FastAPI(title="FlowFunds API", version="0.1.0")
 
 _cors = get_cors_config()
@@ -175,6 +247,57 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+
+
+@app.post("/auth/signup")
+def signup(payload: UserAuth) -> dict:
+    email = payload.email.strip().lower()
+    password = payload.password
+    
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+        
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+        
+    if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
+        raise HTTPException(status_code=400, detail="Invalid email address format")
+        
+    hashed = hash_password(password)
+    
+    with get_conn() as conn:
+        exists = conn.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        if exists:
+            raise HTTPException(status_code=400, detail="Email is already registered")
+            
+        cursor = conn.execute(
+            "INSERT INTO users (email, hashed_password, created_at) VALUES (?, ?, ?)",
+            (email, hashed, datetime.utcnow().isoformat()),
+        )
+        conn.commit()
+        user_id = cursor.lastrowid
+        
+    token = create_access_token({"user_id": user_id, "email": email})
+    return {"token": token, "email": email, "user_id": user_id, "message": "User registered successfully"}
+
+
+@app.post("/auth/login")
+def login(payload: UserAuth) -> dict:
+    email = payload.email.strip().lower()
+    password = payload.password
+    
+    with get_conn() as conn:
+        row = conn.execute("SELECT id, hashed_password FROM users WHERE email=?", (email,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+            
+        if not verify_password(password, row["hashed_password"]):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+            
+        user_id = row["id"]
+        
+    token = create_access_token({"user_id": user_id, "email": email})
+    return {"token": token, "email": email, "user_id": user_id, "message": "Login successful"}
 
 
 @app.get("/health")
@@ -202,47 +325,48 @@ def push_config() -> dict:
 
 
 @app.post("/income")
-def add_income(payload: IncomeCreate) -> dict:
+def add_income(payload: IncomeCreate, current_user_id: int = Depends(get_current_user)) -> dict:
     bucket = payload.income_bucket if payload.income_bucket in {"cash_in_hand", "bank_account"} else "cash_in_hand"
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO transactions (kind, amount, source, income_bucket, category, date, note)
-            VALUES (?, ?, ?, ?, NULL, ?, ?)
+            INSERT INTO transactions (user_id, kind, amount, source, income_bucket, category, date, note)
+            VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
             """,
-            ("income", payload.amount, payload.source, bucket, payload.date.isoformat(), payload.note),
+            (current_user_id, "income", payload.amount, payload.source, bucket, payload.date.isoformat(), payload.note),
         )
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Income recorded"}
 
 
 @app.post("/expense")
-def add_expense(payload: ExpenseCreate) -> dict:
+def add_expense(payload: ExpenseCreate, current_user_id: int = Depends(get_current_user)) -> dict:
     bucket = payload.expense_bucket if payload.expense_bucket in {"cash_in_hand", "bank_account"} else "cash_in_hand"
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO transactions (kind, amount, source, income_bucket, category, date, note)
-            VALUES (?, ?, NULL, ?, ?, ?, ?)
+            INSERT INTO transactions (user_id, kind, amount, source, income_bucket, category, date, note)
+            VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
             """,
-            ("expense", payload.amount, bucket, payload.category, payload.date.isoformat(), payload.note),
+            (current_user_id, "expense", payload.amount, bucket, payload.category, payload.date.isoformat(), payload.note),
         )
         conn.commit()
         return {"id": cursor.lastrowid, "message": "Expense recorded"}
 
 
 @app.get("/transactions")
-def get_transactions(limit: int = Query(default=120, ge=1, le=1000), offset: int = Query(default=0, ge=0)) -> dict:
+def get_transactions(limit: int = Query(default=120, ge=1, le=1000), offset: int = Query(default=0, ge=0), current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT id, kind, amount, source, income_bucket, category, date, note
             FROM transactions
+            WHERE user_id = ?
             ORDER BY date DESC, id DESC
             LIMIT ? OFFSET ?
             """
             ,
-            (limit, offset),
+            (current_user_id, limit, offset),
         ).fetchall()
 
     transactions = [
@@ -264,7 +388,7 @@ def get_transactions(limit: int = Query(default=120, ge=1, le=1000), offset: int
 
 
 @app.patch("/transactions/{transaction_id}")
-def update_transaction(transaction_id: int, payload: dict) -> dict:
+def update_transaction(transaction_id: int, payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     allowed = {"kind", "amount", "source", "income_bucket", "expense_bucket", "category", "date", "note"}
     incoming = {k: payload[k] for k in payload if k in allowed}
     if not incoming:
@@ -272,8 +396,8 @@ def update_transaction(transaction_id: int, payload: dict) -> dict:
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, kind, amount, source, income_bucket, category, date, note FROM transactions WHERE id=?",
-            (transaction_id,),
+            "SELECT id, kind, amount, source, income_bucket, category, date, note FROM transactions WHERE id=? AND user_id=?",
+            (transaction_id, current_user_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Transaction not found")
@@ -312,9 +436,9 @@ def update_transaction(transaction_id: int, payload: dict) -> dict:
             """
             UPDATE transactions
             SET kind=?, amount=?, source=?, income_bucket=?, category=?, date=?, note=?
-            WHERE id=?
+            WHERE id=? AND user_id=?
             """,
-            (kind, amount, source, income_bucket, category, date_value, note, transaction_id),
+            (kind, amount, source, income_bucket, category, date_value, note, transaction_id, current_user_id),
         )
         conn.commit()
 
@@ -322,25 +446,27 @@ def update_transaction(transaction_id: int, payload: dict) -> dict:
 
 
 @app.delete("/transactions/{transaction_id}")
-def delete_transaction(transaction_id: int) -> dict:
+def delete_transaction(transaction_id: int, current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        row = conn.execute("SELECT id FROM transactions WHERE id=?", (transaction_id,)).fetchone()
+        row = conn.execute("SELECT id FROM transactions WHERE id=? AND user_id=?", (transaction_id, current_user_id)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Transaction not found")
-        conn.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
+        conn.execute("DELETE FROM transactions WHERE id=? AND user_id=?", (transaction_id, current_user_id))
         conn.commit()
     return {"message": "Transaction deleted"}
 
 
 @app.get("/loans")
-def get_loans() -> dict:
+def get_loans(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT id, person, amount, note, borrowed_date, due_date, is_paid, paid_date
+            SELECT id, person, amount, note, borrowed_date, due_date, upi_id, is_paid, paid_date
             FROM loans
+            WHERE user_id=?
             ORDER BY is_paid ASC, borrowed_date DESC, id DESC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     loans = [
@@ -351,6 +477,7 @@ def get_loans() -> dict:
             "note": row["note"] or "",
             "borrowed_date": row["borrowed_date"],
             "due_date": row["due_date"],
+            "upi_id": row["upi_id"] or "",
             "is_paid": bool(row["is_paid"]),
             "paid_date": row["paid_date"],
         }
@@ -362,10 +489,11 @@ def get_loans() -> dict:
 
 
 @app.post("/loans")
-def add_loan(payload: dict) -> dict:
+def add_loan(payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     person = (payload.get("person") or "").strip()
     amount = float(payload.get("amount") or 0)
     note = (payload.get("note") or "").strip()
+    upi_id = (payload.get("upi_id") or "").strip() or None
     borrowed_date = payload.get("borrowed_date") or datetime.utcnow().isoformat()
     due_date = payload.get("due_date")
 
@@ -382,10 +510,10 @@ def add_loan(payload: dict) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO loans (person, amount, note, borrowed_date, due_date, is_paid, paid_date)
-            VALUES (?, ?, ?, ?, ?, 0, NULL)
+            INSERT INTO loans (user_id, person, amount, note, borrowed_date, due_date, upi_id, is_paid, paid_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)
             """,
-            (person, amount, note, borrowed_date, parsed_due.isoformat()),
+            (current_user_id, person, amount, note, borrowed_date, parsed_due.isoformat(), upi_id),
         )
         conn.commit()
 
@@ -393,12 +521,12 @@ def add_loan(payload: dict) -> dict:
 
 
 @app.patch("/loans/{loan_id}")
-def update_loan(loan_id: int, payload: dict) -> dict:
+def update_loan(loan_id: int, payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     paid = bool(payload.get("is_paid"))
     paid_date = datetime.utcnow().isoformat() if paid else None
 
     with get_conn() as conn:
-        exists = conn.execute("SELECT id FROM loans WHERE id=?", (loan_id,)).fetchone()
+        exists = conn.execute("SELECT id FROM loans WHERE id=? AND user_id=?", (loan_id, current_user_id)).fetchone()
         if not exists:
             raise HTTPException(status_code=404, detail="Loan not found")
 
@@ -406,9 +534,9 @@ def update_loan(loan_id: int, payload: dict) -> dict:
             """
             UPDATE loans
             SET is_paid=?, paid_date=?
-            WHERE id=?
+            WHERE id=? AND user_id=?
             """,
-            (1 if paid else 0, paid_date, loan_id),
+            (1 if paid else 0, paid_date, loan_id, current_user_id),
         )
         conn.commit()
 
@@ -416,28 +544,29 @@ def update_loan(loan_id: int, payload: dict) -> dict:
 
 
 @app.delete("/loans/{loan_id}")
-def delete_loan(loan_id: int) -> dict:
+def delete_loan(loan_id: int, current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        row = conn.execute("SELECT id FROM loans WHERE id=?", (loan_id,)).fetchone()
+        row = conn.execute("SELECT id FROM loans WHERE id=? AND user_id=?", (loan_id, current_user_id)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Loan not found")
-        conn.execute("DELETE FROM loans WHERE id=?", (loan_id,))
+        conn.execute("DELETE FROM loans WHERE id=? AND user_id=?", (loan_id, current_user_id))
         conn.commit()
     return {"message": "Loan deleted"}
 
 
 @app.get("/predict/payback-plan")
-def get_payback_plan() -> dict:
+def get_payback_plan(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        income = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0])
-        expense = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0])
+        income = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND user_id=?", (current_user_id,)).fetchone()[0])
+        expense = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=?", (current_user_id,)).fetchone()[0])
         rows = conn.execute(
             """
             SELECT id, person, amount, borrowed_date, due_date
             FROM loans
-            WHERE is_paid=0
+            WHERE is_paid=0 AND user_id=?
             ORDER BY due_date ASC, borrowed_date ASC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     balance = income - expense
@@ -482,10 +611,11 @@ def get_payback_plan() -> dict:
     }
 
 
-def refresh_bill_due_dates(conn) -> None:
+def refresh_bill_due_dates(conn, user_id: int) -> None:
     today = dt_date.today()
     rows = conn.execute(
-        "SELECT id, frequency, next_due_date FROM recurring_bills WHERE is_active=1"
+        "SELECT id, frequency, next_due_date FROM recurring_bills WHERE is_active=1 AND user_id=?",
+        (user_id,)
     ).fetchall()
     for row in rows:
         due = parse_iso_date(row["next_due_date"])
@@ -494,22 +624,24 @@ def refresh_bill_due_dates(conn) -> None:
         fresh_due = roll_due_date_forward(due, row["frequency"], today)
         if fresh_due != due:
             conn.execute(
-                "UPDATE recurring_bills SET next_due_date=? WHERE id=?",
-                (fresh_due.isoformat(), row["id"]),
+                "UPDATE recurring_bills SET next_due_date=? WHERE id=? AND user_id=?",
+                (fresh_due.isoformat(), row["id"], user_id),
             )
     conn.commit()
 
 
 @app.get("/bills")
-def get_bills() -> dict:
+def get_bills(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        refresh_bill_due_dates(conn)
+        refresh_bill_due_dates(conn, current_user_id)
         rows = conn.execute(
             """
             SELECT id, name, amount, frequency, next_due_date, note, is_active, last_paid_date, created_at
             FROM recurring_bills
+            WHERE user_id=?
             ORDER BY is_active DESC, next_due_date ASC, id DESC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     today = dt_date.today()
@@ -537,7 +669,7 @@ def get_bills() -> dict:
 
 
 @app.post("/bills")
-def add_bill(payload: dict) -> dict:
+def add_bill(payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     name = (payload.get("name") or "").strip()
     amount = float(payload.get("amount") or 0)
     frequency = (payload.get("frequency") or "monthly").strip().lower()
@@ -557,10 +689,10 @@ def add_bill(payload: dict) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO recurring_bills (name, amount, frequency, next_due_date, note, is_active, created_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?)
+            INSERT INTO recurring_bills (user_id, name, amount, frequency, next_due_date, note, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
             """,
-            (name, amount, frequency, parsed_due.isoformat(), note, datetime.utcnow().isoformat()),
+            (current_user_id, name, amount, frequency, parsed_due.isoformat(), note, datetime.utcnow().isoformat()),
         )
         conn.commit()
 
@@ -568,11 +700,11 @@ def add_bill(payload: dict) -> dict:
 
 
 @app.patch("/bills/{bill_id}")
-def update_bill(bill_id: int, payload: dict) -> dict:
+def update_bill(bill_id: int, payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, frequency, next_due_date, is_active FROM recurring_bills WHERE id=?",
-            (bill_id,),
+            "SELECT id, frequency, next_due_date, is_active FROM recurring_bills WHERE id=? AND user_id=?",
+            (bill_id, current_user_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Bill not found")
@@ -599,9 +731,9 @@ def update_bill(bill_id: int, payload: dict) -> dict:
             """
             UPDATE recurring_bills
             SET is_active=?, next_due_date=?, last_paid_date=COALESCE(?, last_paid_date)
-            WHERE id=?
+            WHERE id=? AND user_id=?
             """,
-            (is_active, next_due.isoformat(), last_paid_date, bill_id),
+            (is_active, next_due.isoformat(), last_paid_date, bill_id, current_user_id),
         )
         conn.commit()
 
@@ -609,30 +741,32 @@ def update_bill(bill_id: int, payload: dict) -> dict:
 
 
 @app.delete("/bills/{bill_id}")
-def delete_bill(bill_id: int) -> dict:
+def delete_bill(bill_id: int, current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        row = conn.execute("SELECT id FROM recurring_bills WHERE id=?", (bill_id,)).fetchone()
+        row = conn.execute("SELECT id FROM recurring_bills WHERE id=? AND user_id=?", (bill_id, current_user_id)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Bill not found")
-        conn.execute("DELETE FROM recurring_bills WHERE id=?", (bill_id,))
+        conn.execute("DELETE FROM recurring_bills WHERE id=? AND user_id=?", (bill_id, current_user_id))
         conn.commit()
     return {"message": "Bill deleted"}
 
 
 @app.get("/analytics/reminders")
-def get_reminders() -> dict:
+def get_reminders(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        refresh_bill_due_dates(conn)
+        refresh_bill_due_dates(conn, current_user_id)
         bills = conn.execute(
             """
             SELECT id, name, amount, next_due_date
             FROM recurring_bills
-            WHERE is_active=1
+            WHERE is_active=1 AND user_id=?
             ORDER BY next_due_date ASC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
         loans = conn.execute(
-            "SELECT id, person, amount, due_date FROM loans WHERE is_paid=0 ORDER BY due_date ASC"
+            "SELECT id, person, amount, due_date FROM loans WHERE is_paid=0 AND user_id=? ORDER BY due_date ASC",
+            (current_user_id,),
         ).fetchall()
 
     today = dt_date.today()
@@ -668,15 +802,17 @@ def get_reminders() -> dict:
 
 
 @app.get("/goals")
-def get_goals() -> dict:
+def get_goals(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT id, title, target_amount, current_amount, target_date, note,
                    is_completed, created_at, completed_at
             FROM savings_goals
+            WHERE user_id=?
             ORDER BY is_completed ASC, id DESC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
         daily_net_rows = conn.execute(
@@ -685,9 +821,10 @@ def get_goals() -> dict:
                    SUM(CASE WHEN kind='income' THEN amount ELSE 0 END)
                    - SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END) as net
             FROM transactions
-            WHERE date(date) >= date('now', '-30 days')
+            WHERE user_id=? AND date(date) >= date('now', '-30 days')
             GROUP BY date(date)
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     avg_daily_savings = 0.0
@@ -724,7 +861,7 @@ def get_goals() -> dict:
 
 
 @app.post("/goals")
-def add_goal(payload: dict) -> dict:
+def add_goal(payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     title = (payload.get("title") or "").strip()
     target_amount = float(payload.get("target_amount") or 0)
     current_amount = float(payload.get("current_amount") or 0)
@@ -744,10 +881,10 @@ def add_goal(payload: dict) -> dict:
     with get_conn() as conn:
         cursor = conn.execute(
             """
-            INSERT INTO savings_goals (title, target_amount, current_amount, target_date, note, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO savings_goals (user_id, title, target_amount, current_amount, target_date, note, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (title, target_amount, current_amount, target_date, note, datetime.utcnow().isoformat()),
+            (current_user_id, title, target_amount, current_amount, target_date, note, datetime.utcnow().isoformat()),
         )
         conn.commit()
 
@@ -755,11 +892,11 @@ def add_goal(payload: dict) -> dict:
 
 
 @app.patch("/goals/{goal_id}")
-def update_goal(goal_id: int, payload: dict) -> dict:
+def update_goal(goal_id: int, payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, target_amount, current_amount, is_completed FROM savings_goals WHERE id=?",
-            (goal_id,),
+            "SELECT id, target_amount, current_amount, is_completed FROM savings_goals WHERE id=? AND user_id=?",
+            (goal_id, current_user_id),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Goal not found")
@@ -787,9 +924,9 @@ def update_goal(goal_id: int, payload: dict) -> dict:
             """
             UPDATE savings_goals
             SET current_amount=?, is_completed=?, completed_at=?
-            WHERE id=?
+            WHERE id=? AND user_id=?
             """,
-            (current_amount, 1 if is_completed else 0, completed_at, goal_id),
+            (current_amount, 1 if is_completed else 0, completed_at, goal_id, current_user_id),
         )
         conn.commit()
 
@@ -797,18 +934,18 @@ def update_goal(goal_id: int, payload: dict) -> dict:
 
 
 @app.delete("/goals/{goal_id}")
-def delete_goal(goal_id: int) -> dict:
+def delete_goal(goal_id: int, current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        row = conn.execute("SELECT id FROM savings_goals WHERE id=?", (goal_id,)).fetchone()
+        row = conn.execute("SELECT id FROM savings_goals WHERE id=? AND user_id=?", (goal_id, current_user_id)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Goal not found")
-        conn.execute("DELETE FROM savings_goals WHERE id=?", (goal_id,))
+        conn.execute("DELETE FROM savings_goals WHERE id=? AND user_id=?", (goal_id, current_user_id))
         conn.commit()
     return {"message": "Goal deleted"}
 
 
 @app.get("/summary", response_model=Summary)
-def get_summary() -> Summary:
+def get_summary(current_user_id: int = Depends(get_current_user)) -> Summary:
     with get_conn() as conn:
         row = conn.execute(
             """
@@ -820,7 +957,9 @@ def get_summary() -> Summary:
               COALESCE(SUM(CASE WHEN kind='expense' AND income_bucket='cash_in_hand' THEN amount ELSE 0 END), 0) AS expense_cash_in_hand,
               COALESCE(SUM(CASE WHEN kind='expense' AND income_bucket='bank_account' THEN amount ELSE 0 END), 0) AS expense_bank_account
             FROM transactions
-            """
+            WHERE user_id = ?
+            """,
+            (current_user_id,),
         ).fetchone()
 
     income = float(row["income"] or 0)
@@ -846,6 +985,7 @@ def get_cashflow_analytics(
     group_by: str = Query(default="month"),
     start_date: str | None = Query(default=None),
     end_date: str | None = Query(default=None),
+    current_user_id: int = Depends(get_current_user)
 ) -> dict:
     if group_by not in {"day", "week", "month"}:
         raise HTTPException(status_code=400, detail="group_by must be one of day, week, month")
@@ -871,11 +1011,11 @@ def get_cashflow_analytics(
               COALESCE(SUM(CASE WHEN kind='income' THEN amount ELSE 0 END), 0) AS income,
               COALESCE(SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END), 0) AS expense
             FROM transactions
-            WHERE date(date) >= date(?) AND date(date) <= date(?)
+            WHERE user_id = ? AND date(date) >= date(?) AND date(date) <= date(?)
             GROUP BY period
             ORDER BY period ASC
             """,
-            (start_obj.isoformat(), end_obj.isoformat()),
+            (current_user_id, start_obj.isoformat(), end_obj.isoformat()),
         ).fetchall()
 
     series = []
@@ -907,57 +1047,61 @@ def get_cashflow_analytics(
 
 
 @app.get("/analytics/category")
-def get_category_analytics() -> dict:
+def get_category_analytics(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT COALESCE(category, 'Misc') as category, SUM(amount) as amount
             FROM transactions
-            WHERE kind='expense'
+            WHERE user_id = ? AND kind='expense'
             GROUP BY COALESCE(category, 'Misc')
             ORDER BY amount DESC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     return {"categories": [{"category": row["category"], "amount": row["amount"]} for row in rows]}
 
 
 @app.get("/analytics/daily-trend")
-def get_daily_trend() -> dict:
+def get_daily_trend(current_user_id: int = Depends(get_current_user)) -> dict:
     """Return daily expense totals for the last 30 days."""
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT substr(date, 1, 10) as day, SUM(amount) as amount
             FROM transactions
-            WHERE kind='expense'
+            WHERE user_id = ? AND kind='expense'
               AND date >= date('now', '-30 days')
             GROUP BY day
             ORDER BY day ASC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     return {"days": [{"day": row["day"], "amount": round(row["amount"], 2)} for row in rows]}
 
 
 @app.get("/analytics/tips")
-def get_spending_tips() -> dict:
+def get_spending_tips(current_user_id: int = Depends(get_current_user)) -> dict:
     """Return simple rule-based spending tips."""
     with get_conn() as conn:
-        income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0]
-        expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0]
+        income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND user_id=?", (current_user_id,)).fetchone()[0]
+        expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=?", (current_user_id,)).fetchone()[0]
         category_rows = conn.execute(
             """
             SELECT COALESCE(category,'Misc') as category, SUM(amount) as amount
-            FROM transactions WHERE kind='expense'
+            FROM transactions WHERE kind='expense' AND user_id=?
             GROUP BY category ORDER BY amount DESC LIMIT 1
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
         week_expense = conn.execute(
             """
             SELECT COALESCE(SUM(amount), 0) FROM transactions
-            WHERE kind='expense' AND date >= date('now', '-7 days')
-            """
+            WHERE kind='expense' AND user_id=? AND date >= date('now', '-7 days')
+            """,
+            (current_user_id,),
         ).fetchone()[0]
 
     tips = []
@@ -985,15 +1129,16 @@ def get_spending_tips() -> dict:
 
 
 @app.get("/predict/forecast")
-def predict_forecast() -> dict:
+def predict_forecast(current_user_id: int = Depends(get_current_user)) -> dict:
     """7-day ML spending forecast using linear regression (numpy)."""
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT substr(date, 1, 10) as day, SUM(amount) as total
-            FROM transactions WHERE kind='expense'
+            FROM transactions WHERE user_id = ? AND kind='expense'
             GROUP BY day ORDER BY day ASC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     if len(rows) < 3:
@@ -1037,27 +1182,31 @@ def predict_forecast() -> dict:
 
 
 @app.get("/predict/financial-health")
-def predict_financial_health() -> dict:
+def predict_financial_health(current_user_id: int = Depends(get_current_user)) -> dict:
     """Financial health guidance tuned for irregular income and daily expenses."""
     with get_conn() as conn:
         income = float(
             conn.execute(
-                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'"
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND user_id=?",
+                (current_user_id,),
             ).fetchone()[0]
         )
         expense = float(
             conn.execute(
-                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'"
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=?",
+                (current_user_id,),
             ).fetchone()[0]
         )
         outstanding_loans = float(
             conn.execute(
-                "SELECT COALESCE(SUM(amount), 0) FROM loans WHERE is_paid=0"
+                "SELECT COALESCE(SUM(amount), 0) FROM loans WHERE is_paid=0 AND user_id=?",
+                (current_user_id,),
             ).fetchone()[0]
         )
         today_expense = float(
             conn.execute(
-                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date)=date('now')"
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date)=date('now') AND user_id=?",
+                (current_user_id,),
             ).fetchone()[0]
         )
         daily_rows = conn.execute(
@@ -1066,22 +1215,25 @@ def predict_financial_health() -> dict:
                    SUM(CASE WHEN kind='income' THEN amount ELSE 0 END) as income,
                    SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END) as expense
             FROM transactions
-            WHERE date(date) >= date('now', '-30 days')
+            WHERE user_id=? AND date(date) >= date('now', '-30 days')
             GROUP BY date(date)
             ORDER BY day ASC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
         income_rows = conn.execute(
             """
             SELECT date(date) as day, amount
             FROM transactions
-            WHERE kind='income' AND date(date) >= date('now', '-120 days')
+            WHERE kind='income' AND user_id=? AND date(date) >= date('now', '-120 days')
             ORDER BY day ASC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
         expense_30_sum = float(
             conn.execute(
-                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date) >= date('now','-30 days')"
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND user_id=? AND date(date) >= date('now','-30 days')",
+                (current_user_id,),
             ).fetchone()[0]
         )
 
@@ -1092,11 +1244,8 @@ def predict_financial_health() -> dict:
     daily_expense = [float(row["expense"] or 0) for row in daily_rows]
 
     avg_daily_net = sum(daily_net) / len(daily_net) if daily_net else 0.0
-
-    # Expense is usually daily, so normalize by a fixed 30-day window.
     avg_daily_expense = expense_30_sum / 30 if expense_30_sum > 0 else 0.0
 
-    # Income is irregular. Estimate next 7-day income by event frequency and event size.
     income_events = [
         {
             "day": parse_iso_date(row["day"]),
@@ -1145,11 +1294,9 @@ def predict_financial_health() -> dict:
 
     expense_spike = exp_std > 0 and today_expense > exp_mean + (2 * exp_std)
 
-    # Keep a repay-first budget: if loans exist, protect that money first.
     spendable_after_loan = max(0.0, balance - outstanding_loans)
     recommended_daily_budget = spendable_after_loan / 7 if spendable_after_loan > 0 else max(0.0, balance / 14)
     if avg_daily_expense > 0:
-        # Guard against unrealistic budgets when income is sparse.
         recommended_daily_budget = min(recommended_daily_budget, avg_daily_expense * 1.1 if recommended_daily_budget > 0 else avg_daily_expense)
 
     burn_rate = (expense / income * 100) if income > 0 else None
@@ -1187,7 +1334,7 @@ def predict_financial_health() -> dict:
 
 
 @app.get("/analytics/patterns")
-def get_spending_patterns() -> dict:
+def get_spending_patterns(current_user_id: int = Depends(get_current_user)) -> dict:
     """Day-of-week average spending pattern."""
     with get_conn() as conn:
         rows = conn.execute(
@@ -1202,10 +1349,11 @@ def get_spending_patterns() -> dict:
                 ROUND(AVG(amount), 2) as avg,
                 COUNT(*) as count
             FROM transactions
-            WHERE kind='expense'
+            WHERE user_id=? AND kind='expense'
             GROUP BY dow_num
             ORDER BY dow_num
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     return {
@@ -1214,26 +1362,30 @@ def get_spending_patterns() -> dict:
 
 
 @app.get("/analytics/today")
-def get_today_stats() -> dict:
+def get_today_stats(current_user_id: int = Depends(get_current_user)) -> dict:
     """Today, yesterday, and 7-day stats."""
     with get_conn() as conn:
         today = float(conn.execute(
-            "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date)=date('now')"
+            "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND user_id=? AND date(date)=date('now')",
+            (current_user_id,),
         ).fetchone()[0])
         yesterday = float(conn.execute(
-            "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date)=date('now','-1 day')"
+            "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND user_id=? AND date(date)=date('now','-1 day')",
+            (current_user_id,),
         ).fetchone()[0])
         week_avg = float(conn.execute(
             """
             SELECT COALESCE(AVG(dt),0) FROM (
               SELECT SUM(amount) as dt FROM transactions
-              WHERE kind='expense' AND date >= date('now','-7 days')
+              WHERE kind='expense' AND user_id=? AND date >= date('now','-7 days')
               GROUP BY date(date)
             )
-            """
+            """,
+            (current_user_id,),
         ).fetchone()[0])
         week_total = float(conn.execute(
-            "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date>=date('now','-7 days')"
+            "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND user_id=? AND date>=date('now','-7 days')",
+            (current_user_id,),
         ).fetchone()[0])
 
     return {
@@ -1245,26 +1397,29 @@ def get_today_stats() -> dict:
 
 
 @app.get("/analytics/today-ledger")
-def get_today_ledger() -> dict:
+def get_today_ledger(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
         income = float(
             conn.execute(
-                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='income' AND date(date)=date('now')"
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='income' AND user_id=? AND date(date)=date('now')",
+                (current_user_id,),
             ).fetchone()[0]
         )
         expense = float(
             conn.execute(
-                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND date(date)=date('now')"
+                "SELECT COALESCE(SUM(amount),0) FROM transactions WHERE kind='expense' AND user_id=? AND date(date)=date('now')",
+                (current_user_id,),
             ).fetchone()[0]
         )
         rows = conn.execute(
             """
             SELECT id, kind, amount, source, category, date, note
             FROM transactions
-            WHERE date(date)=date('now')
+            WHERE user_id=? AND date(date)=date('now')
             ORDER BY date DESC, id DESC
             LIMIT 25
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     return {
@@ -1287,7 +1442,7 @@ def get_today_ledger() -> dict:
 
 
 @app.get("/analytics/period")
-def get_period_analysis(period: str = "weekly") -> dict:
+def get_period_analysis(period: str = "weekly", current_user_id: int = Depends(get_current_user)) -> dict:
     if period not in {"weekly", "monthly"}:
         raise HTTPException(status_code=400, detail="period must be weekly or monthly")
 
@@ -1300,8 +1455,9 @@ def get_period_analysis(period: str = "weekly") -> dict:
                 f"""
                 SELECT COALESCE(SUM(amount),0)
                 FROM transactions
-                WHERE kind='income' AND date(date) >= date('now', '{start_expr}')
-                """
+                WHERE kind='income' AND user_id=? AND date(date) >= date('now', '{start_expr}')
+                """,
+                (current_user_id,),
             ).fetchone()[0]
         )
         expense = float(
@@ -1309,8 +1465,9 @@ def get_period_analysis(period: str = "weekly") -> dict:
                 f"""
                 SELECT COALESCE(SUM(amount),0)
                 FROM transactions
-                WHERE kind='expense' AND date(date) >= date('now', '{start_expr}')
-                """
+                WHERE kind='expense' AND user_id=? AND date(date) >= date('now', '{start_expr}')
+                """,
+                (current_user_id,),
             ).fetchone()[0]
         )
 
@@ -1318,10 +1475,11 @@ def get_period_analysis(period: str = "weekly") -> dict:
             f"""
             SELECT COALESCE(category,'Misc') as category, SUM(amount) as amount
             FROM transactions
-            WHERE kind='expense' AND date(date) >= date('now', '{start_expr}')
+            WHERE kind='expense' AND user_id=? AND date(date) >= date('now', '{start_expr}')
             GROUP BY COALESCE(category,'Misc')
             ORDER BY amount DESC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
         day_rows = conn.execute(
@@ -1330,10 +1488,11 @@ def get_period_analysis(period: str = "weekly") -> dict:
                    SUM(CASE WHEN kind='income' THEN amount ELSE 0 END) as income,
                    SUM(CASE WHEN kind='expense' THEN amount ELSE 0 END) as expense
             FROM transactions
-            WHERE date(date) >= date('now', '{start_expr}')
+            WHERE user_id=? AND date(date) >= date('now', '{start_expr}')
             GROUP BY date(date)
             ORDER BY day ASC
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     categories = []
@@ -1369,19 +1528,20 @@ def get_period_analysis(period: str = "weekly") -> dict:
 
 
 @app.get("/predict/survival-days")
-def predict_survival_days() -> dict:
+def predict_survival_days(current_user_id: int = Depends(get_current_user)) -> dict:
     with get_conn() as conn:
-        income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0]
-        expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0]
+        income = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND user_id=?", (current_user_id,)).fetchone()[0]
+        expense = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=?", (current_user_id,)).fetchone()[0]
         daily_rows = conn.execute(
             """
             SELECT substr(date, 1, 10) as day, SUM(amount) as total
             FROM transactions
-            WHERE kind='expense'
+            WHERE user_id=? AND kind='expense'
             GROUP BY day
             ORDER BY day DESC
             LIMIT 14
-            """
+            """,
+            (current_user_id,),
         ).fetchall()
 
     balance = income - expense
@@ -1406,7 +1566,7 @@ def predict_survival_days() -> dict:
 
 
 @app.post("/push/subscribe")
-def add_push_subscription(payload: dict) -> dict:
+def add_push_subscription(payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     endpoint = payload.get("endpoint")
     keys = payload.get("keys", {})
     p256dh = keys.get("p256dh")
@@ -1418,13 +1578,13 @@ def add_push_subscription(payload: dict) -> dict:
     with get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(endpoint) DO UPDATE SET
               p256dh=excluded.p256dh,
               auth=excluded.auth
             """,
-            (endpoint, p256dh, auth, datetime.utcnow().isoformat()),
+            (current_user_id, endpoint, p256dh, auth, datetime.utcnow().isoformat()),
         )
         conn.commit()
 
@@ -1432,7 +1592,7 @@ def add_push_subscription(payload: dict) -> dict:
 
 
 @app.post("/push/send-test")
-def send_test_push(payload: dict | None = None) -> dict:
+def send_test_push(payload: dict | None = None, current_user_id: int = Depends(get_current_user)) -> dict:
     vapid = get_vapid_config()
     if not vapid["public_key"] or not vapid["private_key"]:
         raise HTTPException(
@@ -1464,7 +1624,7 @@ def send_test_push(payload: dict | None = None) -> dict:
     first_error = None
 
     with get_conn() as conn:
-        rows = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
+        rows = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id=?", (current_user_id,)).fetchall()
         if not rows:
             return {
                 "sent": 0,
@@ -1493,7 +1653,7 @@ def send_test_push(payload: dict | None = None) -> dict:
                     first_error = str(exc)
                 should_remove = status_code in {404, 410} or "410" in error_text or "unsubscribed" in error_text or "expired" in error_text
                 if should_remove:
-                    conn.execute("DELETE FROM push_subscriptions WHERE endpoint=?", (row["endpoint"],))
+                    conn.execute("DELETE FROM push_subscriptions WHERE endpoint=? AND user_id=?", (row["endpoint"], current_user_id))
                     removed += 1
             except Exception as exc:
                 failures += 1
@@ -1522,20 +1682,20 @@ def send_test_push(payload: dict | None = None) -> dict:
 logger = logging.getLogger("flowfunds.ai")
 
 
-def _gather_financial_context(conn) -> str:
+def _gather_financial_context(conn, user_id: int) -> str:
     """Build a comprehensive text summary of the user's finances for the AI."""
     income = float(conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'"
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND user_id=?", (user_id,)
     ).fetchone()[0])
     expense = float(conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'"
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=?", (user_id,)
     ).fetchone()[0])
     balance = income - expense
 
     # Recent transactions (last 30)
     recent = conn.execute(
         """SELECT kind, amount, COALESCE(source, category, 'N/A') as label, date, note
-           FROM transactions ORDER BY date DESC, id DESC LIMIT 30"""
+           FROM transactions WHERE user_id=? ORDER BY date DESC, id DESC LIMIT 30""", (user_id,)
     ).fetchall()
     recent_lines = []
     for r in recent:
@@ -1546,14 +1706,14 @@ def _gather_financial_context(conn) -> str:
     # Category breakdown
     categories = conn.execute(
         """SELECT COALESCE(category, 'Misc') as cat, SUM(amount) as total
-           FROM transactions WHERE kind='expense'
-           GROUP BY cat ORDER BY total DESC"""
+           FROM transactions WHERE kind='expense' AND user_id=?
+           GROUP BY cat ORDER BY total DESC""", (user_id,)
     ).fetchall()
     cat_lines = [f"  {c['cat']}: ₹{float(c['total']):.2f}" for c in categories]
 
     # Loans
     loans = conn.execute(
-        "SELECT person, amount, due_date, is_paid FROM loans ORDER BY is_paid ASC, due_date ASC"
+        "SELECT person, amount, due_date, is_paid FROM loans WHERE user_id=? ORDER BY is_paid ASC, due_date ASC", (user_id,)
     ).fetchall()
     loan_lines = []
     outstanding_total = 0.0
@@ -1566,7 +1726,7 @@ def _gather_financial_context(conn) -> str:
 
     # Goals
     goals = conn.execute(
-        "SELECT title, target_amount, current_amount, target_date, is_completed FROM savings_goals"
+        "SELECT title, target_amount, current_amount, target_date, is_completed FROM savings_goals WHERE user_id=?", (user_id,)
     ).fetchall()
     goal_lines = []
     for g in goals:
@@ -1577,15 +1737,15 @@ def _gather_financial_context(conn) -> str:
 
     # Weekly spending
     week_expense = float(conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND date >= date('now', '-7 days')"
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=? AND date >= date('now', '-7 days')", (user_id,)
     ).fetchone()[0])
     month_expense = float(conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND date >= date('now', '-30 days')"
+        "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=? AND date >= date('now', '-30 days')", (user_id,)
     ).fetchone()[0])
 
     # Bills
     bills = conn.execute(
-        "SELECT name, amount, frequency, next_due_date, is_active FROM recurring_bills ORDER BY next_due_date"
+        "SELECT name, amount, frequency, next_due_date, is_active FROM recurring_bills WHERE user_id=? ORDER BY next_due_date", (user_id,)
     ).fetchall()
     bill_lines = [
         f"  {b['name']}: ₹{float(b['amount']):.2f} {b['frequency']} | Next due: {b['next_due_date']} | {'Active' if b['is_active'] else 'Inactive'}"
@@ -1647,7 +1807,7 @@ Rules:
 """
 
 
-def _generate_llm_response(system_prompt: str, user_prompt: str) -> tuple[str, bool]:
+def _generate_llm_response(system_prompt: str, user_prompt: str, user_id: int) -> tuple[str, bool]:
     """Generates an LLM response checking multiple backend providers (Ollama, Groq, OpenRouter, Gemini)."""
     import urllib.request
     import urllib.error
@@ -1783,9 +1943,9 @@ def _generate_llm_response(system_prompt: str, user_prompt: str) -> tuple[str, b
 
     # 5. Local Rule-Based Fallback
     with get_conn() as conn:
-        income = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income'").fetchone()[0])
-        expense = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense'").fetchone()[0])
-        loans_unpaid = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM loans WHERE is_paid=0").fetchone()[0])
+        income = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='income' AND user_id=?", (user_id,)).fetchone()[0])
+        expense = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE kind='expense' AND user_id=?", (user_id,)).fetchone()[0])
+        loans_unpaid = float(conn.execute("SELECT COALESCE(SUM(amount), 0) FROM loans WHERE is_paid=0 AND user_id=?", (user_id,)).fetchone()[0])
 
     balance = income - expense
     saving_ratio = ((income - expense) / income * 100) if income > 0 else 0
@@ -1821,27 +1981,28 @@ To configure LLM services for your mobile phone:
 
 
 @app.post("/ai/chat")
-def ai_chat(payload: dict) -> dict:
+def ai_chat(payload: dict, current_user_id: int = Depends(get_current_user)) -> dict:
     """Conversational AI financial advisor."""
     message = (payload.get("message") or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
 
     with get_conn() as conn:
-        context = _gather_financial_context(conn)
+        context = _gather_financial_context(conn, current_user_id)
 
     reply, configured = _generate_llm_response(
         system_prompt=AI_SYSTEM_PROMPT,
-        user_prompt=f"{context}\n\nUser question: {message}"
+        user_prompt=f"{context}\n\nUser question: {message}",
+        user_id=current_user_id
     )
     return {"reply": reply, "configured": configured}
 
 
 @app.get("/ai/analysis")
-def ai_auto_analysis() -> dict:
+def ai_auto_analysis(current_user_id: int = Depends(get_current_user)) -> dict:
     """Auto-generated financial analysis."""
     with get_conn() as conn:
-        context = _gather_financial_context(conn)
+        context = _gather_financial_context(conn, current_user_id)
 
     prompt = f"""Generate a comprehensive but concise financial health report covering:
 1. 📊 Overall Financial Health Score (rate 1-10 with explanation)
@@ -1855,7 +2016,8 @@ Keep it under 400 words. Be specific with numbers from the data."""
 
     analysis, configured = _generate_llm_response(
         system_prompt=AI_SYSTEM_PROMPT,
-        user_prompt=f"{context}\n\n{prompt}"
+        user_prompt=f"{context}\n\n{prompt}",
+        user_id=current_user_id
     )
     return {"analysis": analysis, "configured": configured}
 
@@ -1865,12 +2027,13 @@ Keep it under 400 words. Be specific with numbers from the data."""
 # ---------------------------------------------------------------------------
 
 @app.get("/export/csv")
-def export_csv() -> dict:
+def export_csv(current_user_id: int = Depends(get_current_user)) -> dict:
     """Export all transactions as CSV text."""
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT id, kind, amount, source, income_bucket, category, date, note
-               FROM transactions ORDER BY date DESC, id DESC"""
+               FROM transactions WHERE user_id=? ORDER BY date DESC, id DESC""",
+            (current_user_id,),
         ).fetchall()
 
     import csv

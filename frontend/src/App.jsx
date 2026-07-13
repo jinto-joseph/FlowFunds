@@ -24,6 +24,7 @@ import TodayLedger from "./components/TodayLedger";
 import GuideBot from "./components/GuideBot";
 import CashflowAnalytics from "./components/CashflowAnalytics";
 import AIAdvisor from "./components/AIAdvisor";
+import Login from "./components/Login";
 
 const DEFAULT_SUMMARY = {
   balance: 0,
@@ -75,6 +76,9 @@ export default function App() {
     return d.toISOString().slice(0, 10);
   }, []);
 
+  const [token, setToken] = useState(() => localStorage.getItem("flowfunds_token") || "");
+  const [userEmail, setUserEmail] = useState(() => localStorage.getItem("flowfunds_email") || "");
+
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
   const [transactions, setTransactions] = useState([]);
   const [categoryData, setCategoryData] = useState([]);
@@ -124,7 +128,33 @@ export default function App() {
     return Math.max(0, Math.min(1, summary.balance / threshold));
   }, [summary.balance, threshold]);
 
+  useEffect(() => {
+    function handleUnauthorized() {
+      setToken("");
+      setUserEmail("");
+    }
+    window.addEventListener("flowfunds-unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("flowfunds-unauthorized", handleUnauthorized);
+  }, []);
+
+  function handleLogin(newToken, email, userId) {
+    localStorage.setItem("flowfunds_token", newToken);
+    localStorage.setItem("flowfunds_email", email);
+    localStorage.setItem("flowfunds_user_id", userId);
+    setToken(newToken);
+    setUserEmail(email);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("flowfunds_token");
+    localStorage.removeItem("flowfunds_email");
+    localStorage.removeItem("flowfunds_user_id");
+    setToken("");
+    setUserEmail("");
+  }
+
   async function refresh() {
+    if (!token) return;
     setError("");
     try {
       const [
@@ -193,11 +223,14 @@ export default function App() {
   }
 
   useEffect(() => {
-    refresh();
-  }, []);
+    if (token) {
+      refresh();
+    }
+  }, [token]);
 
   useEffect(() => {
     async function loadCashflow() {
+      if (!token) return;
       setCashflowLoading(true);
       try {
         const data = await api.getCashflowAnalytics(cashflowFilters);
@@ -209,7 +242,7 @@ export default function App() {
       }
     }
     loadCashflow();
-  }, [cashflowFilters]);
+  }, [cashflowFilters, token]);
 
   useEffect(() => {
     try {
@@ -504,6 +537,10 @@ export default function App() {
     }
   }
 
+  if (!token) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <>
       {showPaybackPrompt && (
@@ -532,6 +569,15 @@ export default function App() {
               <p className="text-sm text-slate-400 mt-0.5">Smart finance tracker for irregular income</p>
             </div>
             <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400 hidden sm:inline mr-2">{userEmail}</span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="btn btn-ghost btn-sm mr-1"
+                title="Log Out"
+              >
+                🚪 Logout
+              </button>
               <button
                 type="button"
                 onClick={handleExportCSV}

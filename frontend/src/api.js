@@ -8,10 +8,22 @@ async function apiFetch(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
+  const token = localStorage.getItem("flowfunds_token");
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     headers,
     ...options
   });
+
+  if (response.status === 401) {
+    localStorage.removeItem("flowfunds_token");
+    localStorage.removeItem("flowfunds_email");
+    localStorage.removeItem("flowfunds_user_id");
+    window.dispatchEvent(new Event("flowfunds-unauthorized"));
+  }
 
   if (!response.ok) {
     let message = "Request failed";
@@ -29,6 +41,8 @@ async function apiFetch(path, options = {}) {
 }
 
 export const api = {
+  login: (payload) => apiFetch("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  signup: (payload) => apiFetch("/auth/signup", { method: "POST", body: JSON.stringify(payload) }),
   health: () => apiFetch("/health"),
 
   // Transactions
