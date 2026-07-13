@@ -107,8 +107,8 @@ export default function SummaryCards({ summary, prediction }) {
             )}
           </div>
           {card.label === "Balance" && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <div className="flex gap-1 text-xs text-slate-400">
+            <div className="flex items-center mt-2 w-full">
+              <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 text-[10px] text-slate-400 font-medium">
                 <span>Cash: ₹{(summary.income_cash_in_hand - summary.expense_cash_in_hand).toFixed(0)}</span>
                 <span className="text-slate-600">·</span>
                 <span>Bank: ₹{(summary.income_bank_account - summary.expense_bank_account).toFixed(0)}</span>

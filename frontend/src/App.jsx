@@ -57,6 +57,23 @@ function getNotificationPermissionSafe() {
   }
 }
 
+function getCachedState(key, defaultValue) {
+  try {
+    const raw = localStorage.getItem(`ff_cache_${key}`);
+    return raw ? JSON.parse(raw) : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+}
+
+function setCachedState(key, value) {
+  try {
+    localStorage.setItem(`ff_cache_${key}`, JSON.stringify(value));
+  } catch {
+    // Ignore storage failures
+  }
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -81,26 +98,26 @@ export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("flowfunds_token") || "");
   const [userEmail, setUserEmail] = useState(() => localStorage.getItem("flowfunds_email") || "");
 
-  const [summary, setSummary] = useState(DEFAULT_SUMMARY);
-  const [transactions, setTransactions] = useState([]);
-  const [categoryData, setCategoryData] = useState([]);
-  const [prediction, setPrediction] = useState({ days_left: null });
-  const [trendData, setTrendData] = useState([]);
-  const [tips, setTips] = useState([]);
-  const [forecastData, setForecastData] = useState({ forecast: [], historical: [], trend: "stable" });
-  const [patternsData, setPatternsData] = useState([]);
-  const [todayStats, setTodayStats] = useState({ today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
-  const [todayLedger, setTodayLedger] = useState({ today_income: 0, today_expense: 0, today_net: 0, transactions: [] });
-  const [financialHealth, setFinancialHealth] = useState({});
-  const [paybackPlan, setPaybackPlan] = useState({ plan: [] });
-  const [bills, setBills] = useState([]);
-  const [goals, setGoals] = useState([]);
-  const [avgDailySavings, setAvgDailySavings] = useState(0);
-  const [reminders, setReminders] = useState({ upcoming_bills: [], upcoming_loans: [] });
-  const [loans, setLoans] = useState([]);
-  const [outstandingLoanTotal, setOutstandingLoanTotal] = useState(0);
-  const [weeklyAnalysis, setWeeklyAnalysis] = useState({ categories: [], daily: [] });
-  const [monthlyAnalysis, setMonthlyAnalysis] = useState({ categories: [], daily: [] });
+  const [summary, setSummary] = useState(() => getCachedState("summary", DEFAULT_SUMMARY));
+  const [transactions, setTransactions] = useState(() => getCachedState("transactions", []));
+  const [categoryData, setCategoryData] = useState(() => getCachedState("categoryData", []));
+  const [prediction, setPrediction] = useState(() => getCachedState("prediction", { days_left: null }));
+  const [trendData, setTrendData] = useState(() => getCachedState("trendData", []));
+  const [tips, setTips] = useState(() => getCachedState("tips", []));
+  const [forecastData, setForecastData] = useState(() => getCachedState("forecastData", { forecast: [], historical: [], trend: "stable" }));
+  const [patternsData, setPatternsData] = useState(() => getCachedState("patternsData", []));
+  const [todayStats, setTodayStats] = useState(() => getCachedState("todayStats", { today: 0, yesterday: 0, week_avg: 0, week_total: 0 }));
+  const [todayLedger, setTodayLedger] = useState(() => getCachedState("todayLedger", { today_income: 0, today_expense: 0, today_net: 0, transactions: [] }));
+  const [financialHealth, setFinancialHealth] = useState(() => getCachedState("financialHealth", {}));
+  const [paybackPlan, setPaybackPlan] = useState(() => getCachedState("paybackPlan", { plan: [] }));
+  const [bills, setBills] = useState(() => getCachedState("bills", []));
+  const [goals, setGoals] = useState(() => getCachedState("goalsData", {}).goals ?? []);
+  const [avgDailySavings, setAvgDailySavings] = useState(() => Number(getCachedState("goalsData", {}).avg_daily_savings ?? 0));
+  const [reminders, setReminders] = useState(() => getCachedState("reminders", { upcoming_bills: [], upcoming_loans: [] }));
+  const [loans, setLoans] = useState(() => getCachedState("loansData", {}).loans ?? []);
+  const [outstandingLoanTotal, setOutstandingLoanTotal] = useState(() => Number(getCachedState("loansData", {}).outstanding_total ?? 0));
+  const [weeklyAnalysis, setWeeklyAnalysis] = useState(() => getCachedState("weeklyAnalysis", { categories: [], daily: [] }));
+  const [monthlyAnalysis, setMonthlyAnalysis] = useState(() => getCachedState("monthlyAnalysis", { categories: [], daily: [] }));
   const [activePage, setActivePage] = useState("dashboard");
   const [showPaybackPrompt, setShowPaybackPrompt] = useState(false);
   const [cashflowFilters, setCashflowFilters] = useState({
@@ -108,7 +125,7 @@ export default function App() {
     startDate: defaultStartDate,
     endDate: defaultEndDate,
   });
-  const [cashflowData, setCashflowData] = useState({ series: [], total_income: 0, total_expense: 0, net: 0 });
+  const [cashflowData, setCashflowData] = useState(() => getCachedState("cashflowData", { series: [], total_income: 0, total_expense: 0, net: 0 }));
   const [cashflowLoading, setCashflowLoading] = useState(false);
 
   const [threshold, setThreshold] = useState(getSafeStoredThreshold);
@@ -160,72 +177,56 @@ export default function App() {
     setUserEmail("");
   }
 
+  async function fetchAndCache(apiCall, stateSetter, cacheKey, parseFn = (d) => d) {
+    try {
+      const data = await apiCall();
+      const parsed = parseFn(data);
+      stateSetter(parsed);
+      setCachedState(cacheKey, parsed);
+      return { success: true };
+    } catch (err) {
+      console.warn(`Failed to fetch ${cacheKey}:`, err);
+      return { success: false, error: err };
+    }
+  }
+
   async function refresh() {
     if (!token) return;
     setError("");
-    try {
-      const [
-        summaryResp,
-        transactionsResp,
-        categoryResp,
-        predictionResp,
-        trendResp,
-        tipsResp,
-        forecastResp,
-        paybackResp,
-        patternsResp,
-        todayResp,
-        todayLedgerResp,
-        healthResp,
-        billsResp,
-        goalsResp,
-        remindersResp,
-        loansResp,
-        weeklyResp,
-        monthlyResp,
-      ] = await Promise.all([
-        api.getSummary(),
-        api.getTransactions({ limit: 120, offset: 0 }),
-        api.getCategoryAnalytics(),
-        api.getSurvivalPrediction(),
-        api.getDailyTrend(),
-        api.getTips(),
-        api.getForecast(),
-        api.getPaybackPlan(),
-        api.getPatterns(),
-        api.getTodayStats(),
-        api.getTodayLedger(),
-        api.getFinancialHealth(),
-        api.getBills(),
-        api.getGoals(),
-        api.getReminders(),
-        api.getLoans(),
-        api.getPeriodAnalysis("weekly"),
-        api.getPeriodAnalysis("monthly"),
-      ]);
+    
+    const tasks = [
+      fetchAndCache(() => api.getSummary(), setSummary, "summary"),
+      fetchAndCache(() => api.getTransactions({ limit: 120, offset: 0 }), (d) => d.transactions ?? [], "transactions"),
+      fetchAndCache(() => api.getCategoryAnalytics(), (d) => d.categories ?? [], "categoryData"),
+      fetchAndCache(() => api.getSurvivalPrediction(), setPrediction, "prediction"),
+      fetchAndCache(() => api.getDailyTrend(), (d) => d.days ?? [], "trendData"),
+      fetchAndCache(() => api.getTips(), (d) => d.tips ?? [], "tips"),
+      fetchAndCache(() => api.getForecast(), (d) => d ?? { forecast: [], historical: [], trend: "stable" }, "forecastData"),
+      fetchAndCache(() => api.getPaybackPlan(), (d) => d ?? { plan: [] }, "paybackPlan"),
+      fetchAndCache(() => api.getPatterns(), (d) => d.day_of_week ?? [], "patternsData"),
+      fetchAndCache(() => api.getTodayStats(), (d) => d ?? { today: 0, yesterday: 0, week_avg: 0, week_total: 0 }, "todayStats"),
+      fetchAndCache(() => api.getTodayLedger(), (d) => d ?? { today_income: 0, today_expense: 0, today_net: 0, transactions: [] }, "todayLedger"),
+      fetchAndCache(() => api.getFinancialHealth(), (d) => d ?? {}, "financialHealth"),
+      fetchAndCache(() => api.getBills(), (d) => d.bills ?? [], "bills"),
+      fetchAndCache(() => api.getGoals(), (d) => {
+        setGoals(d.goals ?? []);
+        setAvgDailySavings(Number(d.avg_daily_savings ?? 0));
+        return d;
+      }, "goalsData"),
+      fetchAndCache(() => api.getReminders(), (d) => d ?? { upcoming_bills: [], upcoming_loans: [] }, "reminders"),
+      fetchAndCache(() => api.getLoans(), (d) => {
+        setLoans(d.loans ?? []);
+        setOutstandingLoanTotal(Number(d.outstanding_total ?? 0));
+        return d;
+      }, "loansData"),
+      fetchAndCache(() => api.getPeriodAnalysis("weekly"), (d) => d ?? { categories: [], daily: [] }, "weeklyAnalysis"),
+      fetchAndCache(() => api.getPeriodAnalysis("monthly"), (d) => d ?? { categories: [], daily: [] }, "monthlyAnalysis"),
+    ];
 
-      setSummary(summaryResp);
-      setTransactions(transactionsResp.transactions ?? []);
-      setCategoryData(categoryResp.categories ?? []);
-      setPrediction(predictionResp);
-      setTrendData(trendResp.days ?? []);
-      setTips(tipsResp.tips ?? []);
-      setForecastData(forecastResp ?? { forecast: [], historical: [], trend: "stable" });
-      setPaybackPlan(paybackResp ?? { plan: [] });
-      setPatternsData(patternsResp.day_of_week ?? []);
-      setTodayStats(todayResp ?? { today: 0, yesterday: 0, week_avg: 0, week_total: 0 });
-      setTodayLedger(todayLedgerResp ?? { today_income: 0, today_expense: 0, today_net: 0, transactions: [] });
-      setFinancialHealth(healthResp ?? {});
-      setBills(billsResp.bills ?? []);
-      setGoals(goalsResp.goals ?? []);
-      setAvgDailySavings(Number(goalsResp.avg_daily_savings ?? 0));
-      setReminders(remindersResp ?? { upcoming_bills: [], upcoming_loans: [] });
-      setLoans(loansResp.loans ?? []);
-      setOutstandingLoanTotal(Number(loansResp.outstanding_total ?? 0));
-      setWeeklyAnalysis(weeklyResp ?? { categories: [], daily: [] });
-      setMonthlyAnalysis(monthlyResp ?? { categories: [], daily: [] });
-    } catch (err) {
-      setError("Backend not reachable. Start FastAPI server on port 8000.");
+    const results = await Promise.all(tasks);
+    const allFailed = results.every(r => !r.success);
+    if (allFailed) {
+      setError("Backend not reachable. Using cached offline data.");
     }
   }
 
@@ -241,9 +242,11 @@ export default function App() {
       setCashflowLoading(true);
       try {
         const data = await api.getCashflowAnalytics(cashflowFilters);
-        setCashflowData(data ?? { series: [], total_income: 0, total_expense: 0, net: 0 });
+        const parsed = data ?? { series: [], total_income: 0, total_expense: 0, net: 0 };
+        setCashflowData(parsed);
+        setCachedState("cashflowData", parsed);
       } catch {
-        setCashflowData({ series: [], total_income: 0, total_expense: 0, net: 0 });
+        // Keep cached state
       } finally {
         setCashflowLoading(false);
       }
@@ -355,21 +358,45 @@ export default function App() {
   }
 
   async function handleIncome(payload) {
-    setLoading(true);
-    // snapshot unpaid loans BEFORE refresh so we know whether to prompt
+    // Optimistic UI Update
+    const tempTx = {
+      id: -Date.now(),
+      kind: "income",
+      amount: payload.amount,
+      income_bucket: payload.income_bucket,
+      source: payload.source,
+      date: payload.date,
+      note: payload.note || "",
+    };
+
+    const prevSummary = summary;
+    const prevTransactions = transactions;
     const hadUnpaidLoans = loans.some((l) => !l.is_paid);
+
+    setTransactions((prev) => [tempTx, ...prev]);
+
+    const amt = payload.amount;
+    const isBank = payload.income_bucket === "bank_account";
+    setSummary((prev) => ({
+      ...prev,
+      balance: prev.balance + amt,
+      total_income: prev.total_income + amt,
+      income_bank_account: isBank ? prev.income_bank_account + amt : prev.income_bank_account,
+      income_cash_in_hand: !isBank ? prev.income_cash_in_hand + amt : prev.income_cash_in_hand,
+    }));
+
     try {
       await api.addIncome(payload);
-      await refresh();
+      refresh(); // Background sync
       if (hadUnpaidLoans) {
         setShowPaybackPrompt(true);
       }
       return true;
     } catch (err) {
+      setSummary(prevSummary);
+      setTransactions(prevTransactions);
       setError(`Could not add income: ${err?.message ?? "try again."}`);
       throw err;
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -379,7 +406,7 @@ export default function App() {
     setLoading(true);
     try {
       await Promise.all(paidIds.map((id) => api.updateLoan(id, { is_paid: true })));
-      await refresh();
+      refresh();
     } finally {
       setLoading(false);
     }
@@ -390,16 +417,41 @@ export default function App() {
   }
 
   async function handleExpense(payload) {
-    setLoading(true);
+    // Optimistic UI Update
+    const tempTx = {
+      id: -Date.now(),
+      kind: "expense",
+      amount: payload.amount,
+      income_bucket: payload.expense_bucket,
+      category: payload.category,
+      date: payload.date,
+      note: payload.note || "",
+    };
+
+    const prevSummary = summary;
+    const prevTransactions = transactions;
+
+    setTransactions((prev) => [tempTx, ...prev]);
+
+    const amt = payload.amount;
+    const isBank = payload.expense_bucket === "bank_account";
+    setSummary((prev) => ({
+      ...prev,
+      balance: prev.balance - amt,
+      total_expense: prev.total_expense + amt,
+      expense_bank_account: isBank ? prev.expense_bank_account + amt : prev.expense_bank_account,
+      expense_cash_in_hand: !isBank ? prev.expense_cash_in_hand + amt : prev.expense_cash_in_hand,
+    }));
+
     try {
       await api.addExpense(payload);
-      await refresh();
+      refresh(); // Background sync
       return true;
     } catch (err) {
+      setSummary(prevSummary);
+      setTransactions(prevTransactions);
       setError(`Could not add expense: ${err?.message ?? "try again."}`);
       throw err;
-    } finally {
-      setLoading(false);
     }
   }
 
