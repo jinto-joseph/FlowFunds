@@ -11,12 +11,12 @@ import {
 } from "recharts";
 
 export default function MLForecastChart({ historical = [], forecast = [], trend }) {
-  const hist = historical.map((h) => ({ day: h.day.slice(5), actual: h.actual }));
-  const pred = forecast.map((f) => ({
-    day: f.day.slice(5),
-    predicted: f.predicted,
-    lower: f.lower,
-    upper: f.upper,
+  const hist = (historical || []).map((h) => ({ day: String(h?.day || "").slice(5), actual: h?.actual }));
+  const pred = (forecast || []).map((f) => ({
+    day: String(f?.day || "").slice(5),
+    predicted: f?.predicted,
+    lower: f?.lower,
+    upper: f?.upper,
   }));
 
   const data = [...hist, ...pred];

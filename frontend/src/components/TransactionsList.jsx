@@ -30,7 +30,7 @@ export default function TransactionsList({ transactions = [], onUpdateTransactio
       income_bucket: tx.income_bucket ?? "cash_in_hand",
       expense_bucket: tx.expense_bucket ?? tx.income_bucket ?? "cash_in_hand",
       category: tx.category ?? "Misc",
-      date: (tx.date ?? "").slice(0, 10),
+      date: String(tx?.date || "").slice(0, 10),
       note: tx.note ?? "",
     });
   }

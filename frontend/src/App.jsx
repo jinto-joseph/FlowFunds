@@ -196,28 +196,26 @@ export default function App() {
     
     const tasks = [
       fetchAndCache(() => api.getSummary(), setSummary, "summary"),
-      fetchAndCache(() => api.getTransactions({ limit: 120, offset: 0 }), (d) => d.transactions ?? [], "transactions"),
-      fetchAndCache(() => api.getCategoryAnalytics(), (d) => d.categories ?? [], "categoryData"),
+      fetchAndCache(() => api.getTransactions({ limit: 120, offset: 0 }), setTransactions, "transactions", (d) => d.transactions ?? []),
+      fetchAndCache(() => api.getCategoryAnalytics(), setCategoryData, "categoryData", (d) => d.categories ?? []),
       fetchAndCache(() => api.getSurvivalPrediction(), setPrediction, "prediction"),
-      fetchAndCache(() => api.getDailyTrend(), (d) => d.days ?? [], "trendData"),
-      fetchAndCache(() => api.getTips(), (d) => d.tips ?? [], "tips"),
-      fetchAndCache(() => api.getForecast(), (d) => d ?? { forecast: [], historical: [], trend: "stable" }, "forecastData"),
-      fetchAndCache(() => api.getPaybackPlan(), (d) => d ?? { plan: [] }, "paybackPlan"),
-      fetchAndCache(() => api.getPatterns(), (d) => d.day_of_week ?? [], "patternsData"),
-      fetchAndCache(() => api.getTodayStats(), (d) => d ?? { today: 0, yesterday: 0, week_avg: 0, week_total: 0 }, "todayStats"),
-      fetchAndCache(() => api.getTodayLedger(), (d) => d ?? { today_income: 0, today_expense: 0, today_net: 0, transactions: [] }, "todayLedger"),
-      fetchAndCache(() => api.getFinancialHealth(), (d) => d ?? {}, "financialHealth"),
-      fetchAndCache(() => api.getBills(), (d) => d.bills ?? [], "bills"),
+      fetchAndCache(() => api.getDailyTrend(), setTrendData, "trendData", (d) => d.days ?? []),
+      fetchAndCache(() => api.getTips(), setTips, "tips", (d) => d.tips ?? []),
+      fetchAndCache(() => api.getForecast(), setForecastData, "forecastData", (d) => d ?? { forecast: [], historical: [], trend: "stable" }),
+      fetchAndCache(() => api.getPaybackPlan(), setPaybackPlan, "paybackPlan", (d) => d ?? { plan: [] }),
+      fetchAndCache(() => api.getPatterns(), setPatternsData, "patternsData", (d) => d.day_of_week ?? []),
+      fetchAndCache(() => api.getTodayStats(), setTodayStats, "todayStats", (d) => d ?? { today: 0, yesterday: 0, week_avg: 0, week_total: 0 }),
+      fetchAndCache(() => api.getTodayLedger(), setTodayLedger, "todayLedger", (d) => d ?? { today_income: 0, today_expense: 0, today_net: 0, transactions: [] }),
+      fetchAndCache(() => api.getFinancialHealth(), setFinancialHealth, "financialHealth", (d) => d ?? {}),
+      fetchAndCache(() => api.getBills(), setBills, "bills", (d) => d.bills ?? []),
       fetchAndCache(() => api.getGoals(), (d) => {
         setGoals(d.goals ?? []);
         setAvgDailySavings(Number(d.avg_daily_savings ?? 0));
-        return d;
       }, "goalsData"),
-      fetchAndCache(() => api.getReminders(), (d) => d ?? { upcoming_bills: [], upcoming_loans: [] }, "reminders"),
+      fetchAndCache(() => api.getReminders(), setReminders, "reminders", (d) => d ?? { upcoming_bills: [], upcoming_loans: [] }),
       fetchAndCache(() => api.getLoans(), (d) => {
         setLoans(d.loans ?? []);
         setOutstandingLoanTotal(Number(d.outstanding_total ?? 0));
-        return d;
       }, "loansData"),
       fetchAndCache(() => api.getPeriodAnalysis("weekly"), setWeeklyAnalysis, "weeklyAnalysis", (d) => d ?? { categories: [], daily: [] }),
       fetchAndCache(() => api.getPeriodAnalysis("monthly"), setMonthlyAnalysis, "monthlyAnalysis", (d) => d ?? { categories: [], daily: [] }),

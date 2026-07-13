@@ -9,9 +9,9 @@ import {
 } from "recharts";
 
 export default function TrendChart({ data }) {
-  const formatted = data.map((d) => ({
+  const formatted = (data || []).map((d) => ({
     ...d,
-    day: d.day.slice(5) // "2026-03-15" → "03-15"
+    day: String(d?.day || "").slice(5) // "2026-03-15" → "03-15"
   }));
 
   return (
