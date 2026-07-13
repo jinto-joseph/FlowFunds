@@ -25,6 +25,8 @@ import GuideBot from "./components/GuideBot";
 import CashflowAnalytics from "./components/CashflowAnalytics";
 import AIAdvisor from "./components/AIAdvisor";
 import Login from "./components/Login";
+import QRScannerModal from "./components/QRScannerModal";
+import UpiPaymentDrawer from "./components/UpiPaymentDrawer";
 
 const DEFAULT_SUMMARY = {
   balance: 0,
@@ -115,6 +117,11 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
   const [notificationPermission, setNotificationPermission] = useState(getNotificationPermissionSafe);
   const [pushStatus, setPushStatus] = useState("Push not enabled");
+
+  // QR Scanner & UPI Payment state
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [qrPrefillData, setQrPrefillData] = useState(null);
+  const [upiPayment, setUpiPayment] = useState(null);
 
   const lowBalance = useMemo(() => summary.balance < threshold, [summary.balance, threshold]);
   const hasUnpaidLoans = useMemo(() => loans.some((l) => !l.is_paid), [loans]);
@@ -645,7 +652,15 @@ export default function App() {
             <div id="guide-transaction-forms" data-guide-key="transaction-forms">
               <section className="grid gap-4 lg:grid-cols-2">
                 <TransactionForm mode="income" onSubmit={handleIncome} loading={loading} />
-                <TransactionForm mode="expense" onSubmit={handleExpense} loading={loading} />
+                <TransactionForm
+                  mode="expense"
+                  onSubmit={handleExpense}
+                  loading={loading}
+                  prefillData={qrPrefillData}
+                  onClearPrefill={() => setQrPrefillData(null)}
+                  onRequestScan={() => setShowQRScanner(true)}
+                  onPaymentReady={(data) => setUpiPayment(data)}
+                />
               </section>
             </div>
             <section data-guide-key="budget-panel" className="glass-card p-4">
@@ -833,6 +848,32 @@ export default function App() {
         )}
       </main>
       <GuideBot activePage={activePage} onNavigate={setActivePage} />
+
+      {/* QR Scanner Modal */}
+      <QRScannerModal
+        isOpen={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        onScanned={(data) => {
+          setQrPrefillData(data);
+          setShowQRScanner(false);
+          // Launch UPI deep link for payment
+          if (data.rawUri) {
+            window.open(data.rawUri, "_blank");
+          }
+          // Switch to dashboard if not already there
+          setActivePage("dashboard");
+        }}
+      />
+
+      {/* UPI Payment Drawer */}
+      <UpiPaymentDrawer
+        isOpen={!!upiPayment}
+        onClose={() => setUpiPayment(null)}
+        upiId={upiPayment?.upiId || ""}
+        amount={upiPayment?.amount || 0}
+        payeeName={upiPayment?.payeeName || ""}
+        note={upiPayment?.note || ""}
+      />
     </>
   );
 }

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-export default function TransactionForm({ mode, onSubmit, loading }) {
+export default function TransactionForm({ mode, onSubmit, loading, prefillData, onClearPrefill, onRequestScan, onPaymentReady }) {
   const isIncome = mode === "income";
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
@@ -10,8 +10,33 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [submitting, setSubmitting] = useState(false);
 
+  // UPI payment fields (expense only)
+  const [payViaUpi, setPayViaUpi] = useState(false);
+  const [upiId, setUpiId] = useState("");
+  const [payeeName, setPayeeName] = useState("");
+
   const EXPENSE_CATEGORIES = ["Food", "Transport", "Shopping", "Entertainment", "Bills", "Education", "Health", "Misc"];
   const INCOME_SOURCES = ["Freelance", "Part-time Job", "Allowance", "Stipend", "Gift", "Other"];
+
+  // Apply prefill data from QR scan
+  useEffect(() => {
+    if (prefillData && !isIncome) {
+      if (prefillData.amount) setAmount(prefillData.amount);
+      if (prefillData.upiId) {
+        setUpiId(prefillData.upiId);
+        setPayViaUpi(true);
+      }
+      if (prefillData.payeeName) {
+        setPayeeName(prefillData.payeeName);
+        setNote(prefillData.payeeName);
+      }
+      if (prefillData.transactionNote) {
+        setNote(prefillData.transactionNote);
+      }
+      setBucket("bank_account"); // UPI payments are always via bank
+      if (onClearPrefill) onClearPrefill();
+    }
+  }, [prefillData]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -26,10 +51,22 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
     try {
       const success = await onSubmit(payload);
       if (success) {
+        // If UPI payment was toggled, show the payment drawer
+        if (!isIncome && payViaUpi && upiId) {
+          onPaymentReady?.({
+            upiId,
+            amount: numAmount,
+            payeeName,
+            note,
+          });
+        }
         setAmount("");
         setSource("");
         setCategory("");
         setNote("");
+        setPayViaUpi(false);
+        setUpiId("");
+        setPayeeName("");
       }
     } catch {
       // Error handled by parent
@@ -47,10 +84,23 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
           : "border-rose-500/10 hover:border-rose-500/20"
       }`}
     >
-      <h3 className="section-title mb-4">
-        <span>{isIncome ? "📥" : "📤"}</span>
-        <span>{isIncome ? "Add Income" : "Add Expense"}</span>
-      </h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="section-title mb-0">
+          <span>{isIncome ? "📥" : "📤"}</span>
+          <span>{isIncome ? "Add Income" : "Add Expense"}</span>
+        </h3>
+        {/* QR Scan button for expenses */}
+        {!isIncome && onRequestScan && (
+          <button
+            type="button"
+            onClick={onRequestScan}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 hover:border-violet-400/40 transition-all flex items-center gap-1.5"
+          >
+            <span>📷</span>
+            <span>Scan QR</span>
+          </button>
+        )}
+      </div>
 
       <div className="space-y-3">
         {/* Amount - prominent */}
@@ -138,6 +188,50 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
           />
         </div>
 
+        {/* UPI Payment toggle (expense only) */}
+        {!isIncome && (
+          <div className="border border-slate-700/50 rounded-xl p-3 space-y-3 bg-slate-800/30">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={payViaUpi}
+                  onChange={(e) => setPayViaUpi(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-700 rounded-full peer-checked:bg-primary/60 transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
+              </div>
+              <span className="text-sm text-slate-300 font-medium">⚡ Pay via UPI after recording</span>
+            </label>
+
+            {payViaUpi && (
+              <div className="space-y-2 animate-fade-in">
+                <div>
+                  <label className="text-xs font-medium text-slate-400 mb-1 block">Recipient UPI ID</label>
+                  <input
+                    type="text"
+                    value={upiId}
+                    onChange={(e) => setUpiId(e.target.value)}
+                    placeholder="e.g. name@upi or 9876543210@paytm"
+                    className="input font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-400 mb-1 block">Recipient Name (optional)</label>
+                  <input
+                    type="text"
+                    value={payeeName}
+                    onChange={(e) => setPayeeName(e.target.value)}
+                    placeholder="e.g. Chai Wala, Canteen"
+                    className="input text-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           type="submit"
           disabled={loading || submitting || !amount}
@@ -151,7 +245,7 @@ export default function TransactionForm({ mode, onSubmit, loading }) {
               Saving…
             </span>
           ) : (
-            `${isIncome ? "+" : "-"} Record ${isIncome ? "Income" : "Expense"}`
+            `${isIncome ? "+" : "-"} Record ${isIncome ? "Income" : "Expense"}${!isIncome && payViaUpi ? " & Pay" : ""}`
           )}
         </button>
       </div>

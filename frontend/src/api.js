@@ -13,9 +13,10 @@ async function apiFetch(path, options = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  const { headers: _discardedHeaders, ...restOptions } = options;
   const response = await fetch(`${API_BASE}${path}`, {
+    ...restOptions,
     headers,
-    ...options
   });
 
   if (response.status === 401) {
@@ -29,7 +30,14 @@ async function apiFetch(path, options = {}) {
     let message = "Request failed";
     try {
       const data = await response.json();
-      message = data?.detail || data?.message || data?.error || JSON.stringify(data);
+      const detail = data?.detail;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (Array.isArray(detail) && detail.length > 0) {
+        message = detail.map(e => e.msg || JSON.stringify(e)).join("; ");
+      } else {
+        message = data?.message || data?.error || JSON.stringify(data);
+      }
     } catch {
       const text = await response.text();
       if (text) message = text;
